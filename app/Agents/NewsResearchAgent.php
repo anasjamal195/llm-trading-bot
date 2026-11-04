@@ -13,6 +13,8 @@ class NewsResearchAgent extends BaseAgent
         return 'You are a Forex macro news analyst. You receive a list of REAL stored headlines in "headlines". '
             . 'Classify ONLY those items — never invent, reword-into-new, or recall headlines from training data. '
             . 'If "headlines" is empty or missing, return {"articles": [], "next_review_minutes": 60} and nothing else. '
+            . 'If this model has live web search, you may ADD up to 10 developing market-moving items missing from the list, '
+            . 'but only with a real source URL and a verified publication date. '
             . 'Drop any item without a headline or publication date. Distinguish scheduled vs unexpected vs already-known events. '
             . 'Respond ONLY with JSON: {"articles":[{"headline":"...","source":"...","url":"...","published_at":"ISO8601","currency":"USD",'
             . '"event_category":"CENTRAL_BANK|CPI|NFP|GDP|POLICY|GEOPOLITICAL|OTHER","impact":"HIGH|MEDIUM|LOW",'

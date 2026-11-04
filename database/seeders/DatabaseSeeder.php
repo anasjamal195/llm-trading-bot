@@ -79,6 +79,8 @@ class DatabaseSeeder extends Seeder
             'agents.min_interval_minutes' => '2',
             'agents.pair_cooldown_minutes' => '15',
             'openrouter.model.default' => 'meta-llama/llama-3.3-70b-instruct',
+            // Cheap search-enabled model for the news agent (live web lookup + citations).
+            'openrouter.model.news_research' => 'perplexity/sonar',
             'openrouter.temperature' => '0.2',
             'openrouter.max_tokens' => '1500',
             'openrouter.timeout' => '60',
@@ -86,7 +88,7 @@ class DatabaseSeeder extends Seeder
             'openrouter.daily_budget' => '500',
             'openrouter.base_url' => 'https://openrouter.ai/api/v1',
             'timeframe.regime_map' => '{"TRENDING":"H4","RANGING":"M15","VOLATILE":"H1","UNKNOWN":"H1"}',
-            'openrouter.pricing' => '{"deepseek/deepseek-chat":{"in":0.14,"out":0.28},"meta-llama/llama-3.3-70b-instruct":{"in":0.35,"out":0.4},"openai/gpt-4o-mini":{"in":0.15,"out":0.6},"anthropic/claude-3.5-haiku":{"in":0.8,"out":4.0},"google/gemini-flash-1.5":{"in":0.075,"out":0.3}}',
+            'openrouter.pricing' => '{"deepseek/deepseek-chat":{"in":0.14,"out":0.28},"meta-llama/llama-3.3-70b-instruct":{"in":0.35,"out":0.4},"openai/gpt-4o-mini":{"in":0.15,"out":0.6},"anthropic/claude-3.5-haiku":{"in":0.8,"out":4.0},"google/gemini-flash-1.5":{"in":0.075,"out":0.3},"perplexity/sonar":{"in":1.0,"out":1.0},"perplexity/sonar-pro":{"in":3.0,"out":15.0}}',
             'news.provider' => 'manual',
             'notifications.alert_email' => 'anasj5749@gmail.com,tanveer@egeniuscare.com',
         ];
