@@ -82,6 +82,20 @@ class RiskAndMarketTest extends TestCase
         $this->assertFalse(CandleProvider::isValidOhlc(['open' => 0, 'high' => 2, 'low' => 0.5, 'close' => 1.5]));
     }
 
+    public function test_gold_pip_and_volume_math(): void
+    {
+        \App\Models\TradingSymbol::create(['symbol' => 'XAUUSD', 'base_currency' => 'XAU', 'quote_currency' => 'USD', 'is_enabled' => true, 'pip_size' => 0.1, 'spread_pips' => 2.0, 'tick_size' => 0.01, 'tick_value' => 1.0, 'contract_size' => 100]);
+        $risk = app(RiskManagementService::class);
+        $this->assertSame(0.1, $risk->pipSize('XAUUSD'));
+        // $5 stop distance on gold: 500 ticks × $1 = $500/lot; $25 risk → 0.05 lots.
+        $this->assertEquals(0.05, $risk->volumeForRisk(\App\Models\TradingSymbol::where('symbol', 'XAUUSD')->first(), 5.00, 25.00));
+        // P&L: $3.20 move × 100oz × 0.05 lots = $16.00.
+        $this->assertEquals(16.00, app(\App\Services\PaperBroker\PaperBrokerService::class)->pnl('XAUUSD', 'BUY', 4061.10, 4064.30, 0.05));
+        // Spread guard uses metal pip size (2 pips = $0.20, well under 25% of a $5 stop).
+        $res = $risk->validateProposal(['symbol' => 'XAUUSD', 'direction' => 'BUY', 'order_type' => 'LIMIT_BUY', 'entry' => 4061.10, 'stop_loss' => 4056.10, 'take_profit' => 4068.60]);
+        $this->assertTrue($res['approved'], json_encode($res['reasons']));
+    }
+
     public function test_interval_mapping(): void
     {
         $p = new CandleProvider('http://x', '', 5);

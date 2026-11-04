@@ -120,6 +120,8 @@ class RiskManagementService
 
     public function pipSize(string $symbol): float
     {
+        $ts = TradingSymbol::where('symbol', $symbol)->first();
+        if ($ts && (float) $ts->pip_size > 0) return (float) $ts->pip_size;
         return str_ends_with($symbol, 'JPY') ? 0.01 : 0.0001;
     }
 

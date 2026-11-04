@@ -29,8 +29,10 @@ class PaperBrokerService
     public function __construct(private \App\Services\System\AppLogger $log) {}
     public function spreadPrice(TradingSymbol $ts, float $mid, string $side): float
     {
-        // Spread stored in pips; approximate price offset = spread_pips * pipSize / 2 per side.
-        $pip = str_ends_with($ts->symbol, 'JPY') ? 0.01 : 0.0001;
+        // Spread stored in pips; price offset = spread_pips * pipSize / 2 per side.
+        // pip_size is per-symbol (forex 0.0001, JPY 0.01, metals 0.1).
+        $pip = (float) ($ts->pip_size ?? 0);
+        if ($pip <= 0) $pip = str_ends_with($ts->symbol, 'JPY') ? 0.01 : 0.0001;
         $half = ((float) $ts->spread_pips * $pip) / 2;
         return $side === 'bid' ? $mid - $half : $mid + $half;
     }

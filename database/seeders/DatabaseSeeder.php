@@ -6,6 +6,7 @@ use App\Models\AdminUser;
 use App\Models\Setting;
 use App\Models\TradingAccount;
 use App\Models\TradingStrategy;
+use App\Models\TradingSymbol;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -28,13 +29,22 @@ class DatabaseSeeder extends Seeder
             'NZDUSD' => ['NZD', 'USD'],
         ];
         foreach ($pairs as $sym => [$base, $quote]) {
-            \App\Models\TradingSymbol::firstOrCreate(['symbol' => $sym], [
+            TradingSymbol::firstOrCreate(['symbol' => $sym], [
                 'base_currency' => $base, 'quote_currency' => $quote,
                 'is_enabled' => true, 'is_supported' => true,
                 'spread_pips' => str_ends_with($sym, 'JPY') ? 1.8 : 1.2,
                 'tick_size' => str_ends_with($sym, 'JPY') ? 0.001 : 0.00001,
             ]);
         }
+
+        // Gold (metal): 2-decimal quotes, 0.1 pips, 100oz contract.
+        // $1 move on 1 lot = $100 → tick_size 0.01 with tick_value 1.0.
+        \App\Models\TradingSymbol::firstOrCreate(['symbol' => 'XAUUSD'], [
+            'base_currency' => 'XAU', 'quote_currency' => 'USD',
+            'is_enabled' => true, 'is_supported' => true,
+            'pip_size' => 0.1, 'spread_pips' => 2.0,
+            'contract_size' => 100, 'tick_size' => 0.01, 'tick_value' => 1.0,
+        ]);
 
         $strategies = [
             ['TREND_PULLBACK', 'Trend-following pullback', 'Enter pullbacks in established trends'],
