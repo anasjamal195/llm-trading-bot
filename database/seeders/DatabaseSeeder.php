@@ -14,11 +14,25 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        AdminUser::updateOrCreate(['email' => 'admin@tradingbot.graphichat.ai'], [
-            'name' => 'Administrator', 'password' => Hash::make('SEED_ADMIN_PASSWORD_VIA_ENV'), 'is_enabled' => true,
+        // Production admin login. Credentials come from the environment so no
+        // secret is ever committed. Generate: SEED_ADMIN_PASSWORD=$(openssl rand -hex 12)
+        $adminEmail = env('SEED_ADMIN_EMAIL', 'admin@tradingbot.graphichat.ai');
+        $adminPass = env('SEED_ADMIN_PASSWORD', '');
+        $generated = false;
+        if ($adminPass === '') {
+            $adminPass = bin2hex(random_bytes(12));
+            $generated = true;
+        }
+        AdminUser::updateOrCreate(['email' => $adminEmail], [
+            'name' => 'Administrator', 'password' => Hash::make($adminPass), 'is_enabled' => true,
         ]);
         // Remove the default placeholder login if it exists.
-        AdminUser::where('email', 'admin@example.com')->delete();
+        AdminUser::where('email', 'admin@example.com')->where('email', '!=', $adminEmail)->delete();
+        if ($generated) {
+            $this->command->info("Seeded admin: {$adminEmail}");
+            $this->command->info("Generated admin password: {$adminPass}");
+            $this->command->warn('Store this password securely — it is not saved anywhere else.');
+        }
 
         TradingAccount::firstOrCreate(['id' => 1], [
             'name' => 'Primary Paper Account', 'currency' => 'USD',
@@ -93,8 +107,14 @@ class DatabaseSeeder extends Seeder
             'notifications.alert_email' => 'anasj5749@gmail.com,tanveer@egeniuscare.com',
         ];
 
-        // OpenRouter gateway key (stored encrypted). Rotate immediately if exposed.
-        Setting::put('openrouter.api_key', 'SEED_OPENROUTER_KEY_VIA_ENV', 'openrouter', true);
+        // OpenRouter gateway key (stored encrypted). NEVER hardcode the key here:
+        // export SEED_OPENROUTER_KEY=sk-or-... before seeding on the server.
+        $seedKey = env('SEED_OPENROUTER_KEY', '');
+        if ($seedKey !== '') {
+            Setting::put('openrouter.api_key', $seedKey, 'openrouter', true);
+        } else {
+            $this->command->warn('SEED_OPENROUTER_KEY not set — skipping LLM key seed. Add it in Settings later.');
+        }
         foreach ($defaults as $k => $v) {
             Setting::firstOrCreate(['key' => $k], ['value' => $v, 'group' => explode('.', $k)[0]]);
         }
