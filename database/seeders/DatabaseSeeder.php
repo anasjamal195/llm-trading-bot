@@ -58,7 +58,7 @@ class DatabaseSeeder extends Seeder
         }
 
         $defaults = [
-            'market.timeframes' => 'M1,M15,H1,H4,D1',
+            'market.timeframes' => 'M1,M5,M15,M30,H1,H4,D1',
             'market.max_stale_seconds' => '600',
             'risk.starting_balance' => '10000',
             'risk.risk_per_trade_pct' => '0.25',
@@ -86,6 +86,7 @@ class DatabaseSeeder extends Seeder
             'timeframe.regime_map' => '{"TRENDING":"H4","RANGING":"M15","VOLATILE":"H1","UNKNOWN":"H1"}',
             'openrouter.pricing' => '{"deepseek/deepseek-chat":{"in":0.14,"out":0.28},"meta-llama/llama-3.3-70b-instruct":{"in":0.35,"out":0.4},"openai/gpt-4o-mini":{"in":0.15,"out":0.6},"anthropic/claude-3.5-haiku":{"in":0.8,"out":4.0},"google/gemini-flash-1.5":{"in":0.075,"out":0.3}}',
             'news.provider' => 'manual',
+            'notifications.alert_email' => 'anasj5749@gmail.com,tanveer@egeniuscare.com',
         ];
         foreach ($defaults as $k => $v) {
             Setting::firstOrCreate(['key' => $k], ['value' => $v, 'group' => explode('.', $k)[0]]);
