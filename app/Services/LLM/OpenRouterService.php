@@ -66,12 +66,17 @@ class OpenRouterService
             'model' => $model,
             'temperature' => $temperature,
             'max_tokens' => $maxTokens,
-            'response_format' => ['type' => 'json_object'],
             'messages' => [
                 ['role' => 'system', 'content' => $system],
                 ['role' => 'user', 'content' => is_string($user) ? $user : json_encode($user)],
             ],
         ];
+        // Perplexity search models reject response_format json_object (they
+        // accept only json_schema/text), so use unconstrained text mode and
+        // rely on prompt discipline + schema validation + retry.
+        if (! str_starts_with(strtolower($model), 'perplexity/')) {
+            $payload['response_format'] = ['type' => 'json_object'];
+        }
 
         $attempt = 0; $lastError = '';
         while ($attempt <= $retries) {
