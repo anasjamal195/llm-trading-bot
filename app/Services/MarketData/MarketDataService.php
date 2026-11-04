@@ -45,27 +45,39 @@ class MarketDataService
         return isset(CandleProvider::TIMEFRAME_MINUTES[$tf]) ? $tf : 'H1';
     }
 
-    /** Sync latest candles for a symbol/timeframe. Returns stats. */
+    /**
+     * Sync latest candles. IMPORTANT bridge semantics (verified empirically):
+     * the bridge interprets startTime as the END of the window in MT5 server
+     * time (which runs ahead of UTC yet is labeled with Z), so offset-based
+     * fetching returns duplicates and never advances. We therefore anchor on
+     * COUNT: fetch the latest N bars (N sized from the gap since last sync)
+     * and rely on batch upserts for idempotency.
+     */
     public function sync(string $symbol, string $timeframe, int $limit = 500): array
-    {        $state = CandleSyncState::firstOrCreate(
+    {
+        $state = CandleSyncState::firstOrCreate(
             ['symbol' => $symbol, 'timeframe' => strtoupper($timeframe)]
         );
 
         try {
+            $minutes = CandleProvider::TIMEFRAME_MINUTES[strtoupper($timeframe)] ?? 1;
             $last = Candle::where('symbol', $symbol)
                 ->where('timeframe', strtoupper($timeframe))
                 ->max('candle_time');
 
             if ($last) {
-                $fromMs = (int) (strtotime($last) * 1000) + 1;
-                $payload = $this->provider->klines($symbol, $timeframe, $limit, $fromMs);
+                // +2 interval buffer for the in-flight forming bar and clock skew.
+                $spanMin = max(1, (time() - strtotime($last)) / 60);
+                $limit = min(5000, (int) ceil($spanMin / $minutes) + 2);
+                $payload = $this->provider->klines($symbol, $timeframe, $limit);
             } else {
                 $payload = $this->provider->klines($symbol, $timeframe, $limit);
             }
 
             $candles = $payload['candles'] ?? [];
-            // Drop the last (possibly still-forming) candle: keep it only if a newer completed one exists.
-            // Heuristic: drop final candle if its open time is within one timeframe interval of now.
+            // Drop the final bar: in a latest-anchored fetch it is the still-forming
+            // candle. (Wall-clock check also holds when the MT5 server clock runs
+            // ahead of UTC, since the diff then goes negative.)
             $candles = $this->dropFormingCandle($candles, $timeframe);
 
             $inserted = 0; $invalid = 0;
