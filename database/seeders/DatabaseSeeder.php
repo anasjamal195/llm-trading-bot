@@ -14,9 +14,11 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        AdminUser::firstOrCreate(['email' => 'admin@example.com'], [
-            'name' => 'Administrator', 'password' => Hash::make('ChangeMe123!'), 'is_enabled' => true,
+        AdminUser::updateOrCreate(['email' => 'admin@tradingbot.graphichat.ai'], [
+            'name' => 'Administrator', 'password' => Hash::make('SEED_ADMIN_PASSWORD_VIA_ENV'), 'is_enabled' => true,
         ]);
+        // Remove the default placeholder login if it exists.
+        AdminUser::where('email', 'admin@example.com')->delete();
 
         TradingAccount::firstOrCreate(['id' => 1], [
             'name' => 'Primary Paper Account', 'currency' => 'USD',
@@ -88,6 +90,9 @@ class DatabaseSeeder extends Seeder
             'news.provider' => 'manual',
             'notifications.alert_email' => 'anasj5749@gmail.com,tanveer@egeniuscare.com',
         ];
+
+        // OpenRouter gateway key (stored encrypted). Rotate immediately if exposed.
+        Setting::put('openrouter.api_key', 'SEED_OPENROUTER_KEY_VIA_ENV', 'openrouter', true);
         foreach ($defaults as $k => $v) {
             Setting::firstOrCreate(['key' => $k], ['value' => $v, 'group' => explode('.', $k)[0]]);
         }

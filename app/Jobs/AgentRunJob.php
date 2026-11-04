@@ -87,6 +87,13 @@ class AgentRunJob implements ShouldQueue
     private function enrich(AgentTask $task): array
     {
         $ctx = $task->input_context ?? [];
+        if ($task->task_type === 'research_news') {
+            // Feed the agent ONLY real stored headlines (from the news provider
+            // or admin entries). Never let it invent news from thin air.
+            $ctx['headlines'] = \App\Models\NewsArticle::where('expires_at', '>', now())
+                ->orderBy('published_at', 'desc')->limit(20)->get()
+                ->map(fn ($n) => ['headline' => $n->headline, 'source' => $n->source, 'url' => $n->url, 'published_at' => $n->published_at?->toIso8601String(), 'currency' => $n->currency])->all();
+        }
         if ($task->symbol) {
             $tf = app(\App\Services\MarketData\MarketDataService::class)->analysisTimeframe($task->symbol);
             $snap = \App\Models\MarketSnapshot::where('symbol', $task->symbol)->orderBy('id', 'desc')->first();
