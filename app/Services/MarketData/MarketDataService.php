@@ -1,0 +1,190 @@
+<?php
+
+namespace App\Services\MarketData;
+
+use App\Models\Candle;
+use App\Models\CandleSyncState;
+use App\Models\MarketSnapshot;
+use App\Models\TradingSymbol;
+use App\Services\MT5\CandleProvider;
+use App\Services\Trading\TechnicalAnalysisService;
+
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Candle synchronization with per-symbol/timeframe cursor, gap detection,
+ * batch upsert, and health monitoring. Prefers completed candles.
+ */
+class MarketDataService
+{
+    public function __construct(
+        private CandleProvider $provider,
+        private TechnicalAnalysisService $ta,
+    ) {}
+
+    /** Sync latest candles for a symbol/timeframe. Returns stats. */
+    public function sync(string $symbol, string $timeframe, int $limit = 500): array
+    {
+        $state = CandleSyncState::firstOrCreate(
+            ['symbol' => $symbol, 'timeframe' => strtoupper($timeframe)]
+        );
+
+        try {
+            $last = Candle::where('symbol', $symbol)
+                ->where('timeframe', strtoupper($timeframe))
+                ->max('candle_time');
+
+            if ($last) {
+                $fromMs = (int) (strtotime($last) * 1000) + 1;
+                $payload = $this->provider->klines($symbol, $timeframe, $limit, $fromMs);
+            } else {
+                $payload = $this->provider->klines($symbol, $timeframe, $limit);
+            }
+
+            $candles = $payload['candles'] ?? [];
+            // Drop the last (possibly still-forming) candle: keep it only if a newer completed one exists.
+            // Heuristic: drop final candle if its open time is within one timeframe interval of now.
+            $candles = $this->dropFormingCandle($candles, $timeframe);
+
+            $inserted = 0; $invalid = 0;
+            $rows = [];
+            foreach ($candles as $c) {
+                if (! CandleProvider::isValidOhlc($c)) { $invalid++; continue; }
+                $rows[] = CandleProvider::normalizeCandle($symbol, $timeframe, $c);
+            }
+
+            if ($rows !== []) {
+                // Batch upsert in chunks to avoid duplicates (unique symbol+timeframe+candle_time).
+                foreach (array_chunk($rows, 500) as $chunk) {
+                    $before = Candle::where('symbol', $symbol)->where('timeframe', strtoupper($timeframe))->count();
+                    Candle::upsert($chunk, ['symbol', 'timeframe', 'candle_time'], ['open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume', 'source', 'updated_at']);
+                    $after = Candle::where('symbol', $symbol)->where('timeframe', strtoupper($timeframe))->count();
+                    $inserted += max(0, $after - $before);
+                }
+            }
+
+            $maxTime = Candle::where('symbol', $symbol)->where('timeframe', strtoupper($timeframe))->max('candle_time');
+            $state->update([
+                'last_candle_time' => $maxTime, 'status' => 'OK',
+                'last_error' => null, 'last_synced_at' => now(),
+            ]);
+
+            $gaps = $this->detectGaps($symbol, $timeframe);
+
+            return ['symbol' => $symbol, 'timeframe' => $timeframe, 'fetched' => count($candles), 'inserted' => $inserted, 'invalid' => $invalid, 'gaps' => $gaps];
+        } catch (\Throwable $e) {
+            $state->update(['status' => 'ERROR', 'last_error' => substr($e->getMessage(), 0, 1000), 'last_synced_at' => now()]);
+            Log::warning('Candle sync failed', ['symbol' => $symbol, 'tf' => $timeframe, 'error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /** Backfill a historical range [from, to] (UTC). Used for initialization. */
+    public function backfill(string $symbol, string $timeframe, \DateTimeInterface $from, \DateTimeInterface $to): array
+    {
+        $payload = $this->provider->klines($symbol, $timeframe, 5000, $from->getTimestamp() * 1000, $to->getTimestamp() * 1000);
+        $candles = $payload['candles'] ?? [];
+        $rows = [];
+        foreach ($candles as $c) {
+            if (! CandleProvider::isValidOhlc($c)) continue;
+            $rows[] = CandleProvider::normalizeCandle($symbol, $timeframe, $c);
+        }
+        foreach (array_chunk($rows, 500) as $chunk) {
+            Candle::upsert($chunk, ['symbol', 'timeframe', 'candle_time'], ['open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume', 'source', 'updated_at']);
+        }
+        return ['symbol' => $symbol, 'timeframe' => $timeframe, 'stored' => count($rows)];
+    }
+
+    /** Build a market snapshot with indicators for a symbol. */
+    public function snapshot(string $symbol, string $timeframe = 'H1'): MarketSnapshot
+    {
+        $candles = Candle::where('symbol', $symbol)->where('timeframe', strtoupper($timeframe))
+            ->orderBy('candle_time', 'desc')->limit(250)->get()->reverse()->values();
+        if ($candles->isEmpty()) {
+            throw new \RuntimeException("No candles for {$symbol} {$timeframe}");
+        }
+        $closes = $candles->pluck('close')->map(fn ($v) => (float) $v)->all();
+        $highs = $candles->pluck('high')->map(fn ($v) => (float) $v)->all();
+        $lows = $candles->pluck('low')->map(fn ($v) => (float) $v)->all();
+        $last = $candles->last();
+
+        $indicators = [
+            'sma20' => $this->ta->sma($closes, 20),
+            'sma50' => $this->ta->sma($closes, 50),
+            'ema20' => $this->ta->ema($closes, 20),
+            'rsi14' => $this->ta->rsi($closes, 14),
+            'atr14' => $this->ta->atr($highs, $lows, $closes, 14),
+            'donchian20_high' => $this->ta->highest($highs, 20),
+            'donchian20_low' => $this->ta->lowest($lows, 20),
+        ];
+        $trend = $this->ta->trend($closes);
+        $atr = $indicators['atr14'] ?? 0;
+        $volPct = $last->close > 0 ? round(($atr / (float) $last->close) * 100, 4) : 0;
+
+        return MarketSnapshot::create([
+            'symbol' => $symbol,
+            'price' => $last->close,
+            'timeframe' => strtoupper($timeframe),
+            'candle_time' => $last->candle_time,
+            'atr' => $atr,
+            'volatility_pct' => $volPct,
+            'trend' => $trend,
+            'regime' => $this->ta->regime($closes, (float) ($indicators['atr14'] ?? 0)),
+            'indicators' => $indicators,
+        ]);
+    }
+
+    /** Health: stale/missing candles per monitored symbol. */
+    public function health(int $maxStaleSeconds = 300): array
+    {
+        $symbols = TradingSymbol::where('is_enabled', true)->pluck('symbol');
+        $report = [];
+        foreach ($symbols as $symbol) {
+            $last = Candle::where('symbol', $symbol)->where('timeframe', 'M1')->max('candle_time');
+            $age = $last ? (time() - strtotime($last)) : null;
+            // Forex weekends: market closed Sat/Sun — mark accordingly, not stale.
+            $dow = (int) gmdate('N');
+            $weekend = $dow >= 6;
+            $status = $last === null ? 'MISSING' : (($age > $maxStaleSeconds && ! $weekend) ? 'STALE' : 'OK');
+            $report[] = ['symbol' => $symbol, 'last_candle' => $last, 'age_seconds' => $age, 'status' => $status];
+        }
+        return $report;
+    }
+
+    public function isFresh(int $maxStaleSeconds = 300): bool
+    {
+        foreach ($this->health($maxStaleSeconds) as $row) {
+            $dow = (int) gmdate('N');
+            if ($dow >= 6) continue;
+            if (in_array($row['status'], ['MISSING', 'STALE'], true)) return false;
+        }
+        return true;
+    }
+
+    private function dropFormingCandle(array $candles, string $timeframe): array
+    {
+        if (count($candles) < 2) return $candles;
+        $minutes = CandleProvider::TIMEFRAME_MINUTES[strtoupper($timeframe)] ?? 1;
+        $last = end($candles);
+        $lastTs = (int) ($last['time'] ?? 0);
+        if ($lastTs > 0 && (time() - $lastTs) < ($minutes * 60)) {
+            array_pop($candles);
+        }
+        return $candles;
+    }
+
+    private function detectGaps(string $symbol, string $timeframe): int
+    {
+        $minutes = CandleProvider::TIMEFRAME_MINUTES[strtoupper($timeframe)] ?? null;
+        if (! $minutes) return 0;
+        $times = Candle::where('symbol', $symbol)->where('timeframe', strtoupper($timeframe))
+            ->orderBy('candle_time', 'desc')->limit(200)->pluck('candle_time')
+            ->map(fn ($t) => strtotime($t))->sort()->values()->all();
+        $gaps = 0;
+        for ($i = 1; $i < count($times); $i++) {
+            if (($times[$i] - $times[$i - 1]) > ($minutes * 60 * 1.5)) $gaps++;
+        }
+        return $gaps;
+    }
+}
