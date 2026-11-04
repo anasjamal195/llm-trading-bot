@@ -73,6 +73,8 @@ class DatabaseSeeder extends Seeder
             'openrouter.retries' => '2',
             'openrouter.daily_budget' => '500',
             'openrouter.base_url' => 'https://openrouter.ai/api/v1',
+            'timeframe.regime_map' => '{"TRENDING":"H4","RANGING":"M15","VOLATILE":"H1","UNKNOWN":"H1"}',
+            'openrouter.pricing' => '{"deepseek/deepseek-chat":{"in":0.14,"out":0.28},"meta-llama/llama-3.3-70b-instruct":{"in":0.35,"out":0.4},"openai/gpt-4o-mini":{"in":0.15,"out":0.6},"anthropic/claude-3.5-haiku":{"in":0.8,"out":4.0},"google/gemini-flash-1.5":{"in":0.075,"out":0.3}}',
             'news.provider' => 'manual',
         ];
         foreach ($defaults as $k => $v) {

@@ -5,6 +5,7 @@ namespace App\Services\MarketData;
 use App\Models\Candle;
 use App\Models\CandleSyncState;
 use App\Models\MarketSnapshot;
+use App\Models\Setting;
 use App\Models\TradingSymbol;
 use App\Services\MT5\CandleProvider;
 use App\Services\Trading\TechnicalAnalysisService;
@@ -21,12 +22,32 @@ class MarketDataService
     public function __construct(
         private CandleProvider $provider,
         private TechnicalAnalysisService $ta,
+        private \App\Services\System\AppLogger $log,
     ) {}
+
+    /**
+     * Automatic timeframe selection. Each symbol carries an analysis_timeframe
+     * (updated from the market regime by the discovery agent). Execution and
+     * SL/TP monitoring ALWAYS stay on M1 — this only changes the analysis lens.
+     */
+    public function analysisTimeframe(string $symbol): string
+    {
+        $tf = strtoupper((string) (TradingSymbol::where('symbol', $symbol)->value('analysis_timeframe') ?? 'H1'));
+        if (! isset(CandleProvider::TIMEFRAME_MINUTES[$tf])) return 'H1';
+        return $tf;
+    }
+
+    /** Regime → timeframe map (deterministic, admin-configurable). */
+    public static function regimeTimeframe(string $regime): string
+    {
+        $map = json_decode((string) Setting::get('timeframe.regime_map', '{"TRENDING":"H4","RANGING":"M15","VOLATILE":"H1","UNKNOWN":"H1"}'), true) ?: [];
+        $tf = strtoupper((string) ($map[strtoupper($regime)] ?? 'H1'));
+        return isset(CandleProvider::TIMEFRAME_MINUTES[$tf]) ? $tf : 'H1';
+    }
 
     /** Sync latest candles for a symbol/timeframe. Returns stats. */
     public function sync(string $symbol, string $timeframe, int $limit = 500): array
-    {
-        $state = CandleSyncState::firstOrCreate(
+    {        $state = CandleSyncState::firstOrCreate(
             ['symbol' => $symbol, 'timeframe' => strtoupper($timeframe)]
         );
 
@@ -71,11 +92,12 @@ class MarketDataService
             ]);
 
             $gaps = $this->detectGaps($symbol, $timeframe);
+            $this->log->info('market', "Synced {$symbol} {$timeframe}", ['fetched' => count($candles), 'inserted' => $inserted, 'invalid' => $invalid, 'gaps' => $gaps]);
 
             return ['symbol' => $symbol, 'timeframe' => $timeframe, 'fetched' => count($candles), 'inserted' => $inserted, 'invalid' => $invalid, 'gaps' => $gaps];
         } catch (\Throwable $e) {
             $state->update(['status' => 'ERROR', 'last_error' => substr($e->getMessage(), 0, 1000), 'last_synced_at' => now()]);
-            Log::warning('Candle sync failed', ['symbol' => $symbol, 'tf' => $timeframe, 'error' => $e->getMessage()]);
+            $this->log->error('market', "Sync failed {$symbol} {$timeframe}", ['error' => substr($e->getMessage(), 0, 300)]);
             throw $e;
         }
     }
@@ -96,9 +118,10 @@ class MarketDataService
         return ['symbol' => $symbol, 'timeframe' => $timeframe, 'stored' => count($rows)];
     }
 
-    /** Build a market snapshot with indicators for a symbol. */
-    public function snapshot(string $symbol, string $timeframe = 'H1'): MarketSnapshot
+    /** Build a market snapshot with indicators for a symbol (analysis TF auto-selected). */
+    public function snapshot(string $symbol, ?string $timeframe = null): MarketSnapshot
     {
+        $timeframe = strtoupper($timeframe ?? $this->analysisTimeframe($symbol));
         $candles = Candle::where('symbol', $symbol)->where('timeframe', strtoupper($timeframe))
             ->orderBy('candle_time', 'desc')->limit(250)->get()->reverse()->values();
         if ($candles->isEmpty()) {

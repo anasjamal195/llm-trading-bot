@@ -123,6 +123,22 @@ return [
             'handler' => NullHandler::class,
         ],
 
+        'trading' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/trading.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 30,
+            'replace_placeholders' => true,
+        ],
+
+        'agents' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/agents.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 30,
+            'replace_placeholders' => true,
+        ],
+
         'emergency' => [
             'path' => storage_path('logs/laravel.log'),
         ],

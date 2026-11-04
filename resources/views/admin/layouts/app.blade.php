@@ -30,7 +30,7 @@ window.PUSHER_CONF = {
         'Market' => [['admin.market','Live Market','market'],['admin.currencies','Currency Intel','currencies']],
         'Trading' => [['admin.proposals','Trade Proposals','proposals'],['admin.orders.pending','Pending Orders','orders/pending'],['admin.orders.filled','Filled Orders','orders/filled'],['admin.trades.open','Open Trades','trades/open'],['admin.trades.closed','Closed Trades','trades/closed'],['admin.analytics','Performance','analytics']],
         'Intelligence' => [['admin.agents','AI Agents','agents'],['admin.learning','Learning','learning'],['admin.backtests','Backtesting','backtests']],
-        'System' => [['admin.activity','System Activity','activity'],['admin.settings','Settings','settings']],
+        'System' => [['admin.activity','System Activity','activity'],['admin.logs','System Logs','logs'],['admin.settings','Settings','settings']],
       ];
       @endphp
       @foreach($nav as $section => $links)

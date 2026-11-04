@@ -18,7 +18,7 @@ class MarketSnapshotJob implements ShouldQueue
     {
         foreach (TradingSymbol::where('is_enabled', true)->get() as $ts) {
             try {
-                $snap = $md->snapshot($ts->symbol, 'H1');
+                $snap = $md->snapshot($ts->symbol);
                 MarketSnapshotUpdated::dispatch([
                     'symbol' => $snap->symbol, 'price' => $snap->price,
                     'trend' => $snap->trend, 'regime' => $snap->regime, 'at' => now()->toIso8601String(),

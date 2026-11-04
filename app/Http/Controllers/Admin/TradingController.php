@@ -94,6 +94,7 @@ class TradingController extends Controller
         $rows = collect($agents)->map(function ($a) {
             $last = AgentTask::where('agent_name', $a)->orderBy('id', 'desc')->first();
             $usage = ModelUsageLog::where('agent_name', $a);
+            $today = (clone $usage)->whereDate('created_at', today());
             return [
                 'name' => $a,
                 'enabled' => Setting::get("agents.{$a}.enabled", '1') === '1',
@@ -102,10 +103,20 @@ class TradingController extends Controller
                 'calls' => (clone $usage)->count(),
                 'tokens' => (clone $usage)->sum('input_tokens') + (clone $usage)->sum('output_tokens'),
                 'cost' => round((float) (clone $usage)->sum('estimated_cost'), 4),
+                'calls_today' => (clone $today)->count(),
+                'cost_today' => round((float) (clone $today)->sum('estimated_cost'), 4),
                 'errors' => (clone $usage)->where('status', '!=', 'OK')->count(),
+                'avg_latency' => round((float) (clone $usage)->avg('latency_ms') ?? 0),
             ];
         });
-        return view('admin.agents.index', ['agents' => $rows, 'tasks' => AgentTask::orderBy('id', 'desc')->paginate(25)]);
+        $byModel = ModelUsageLog::selectRaw('model, COUNT(*) calls, SUM(input_tokens)+SUM(output_tokens) tokens, SUM(estimated_cost) cost, AVG(latency_ms) latency')
+            ->groupBy('model')->orderByDesc('cost')->get();
+        $spend = [
+            'today' => round((float) ModelUsageLog::whereDate('created_at', today())->sum('estimated_cost'), 4),
+            'week' => round((float) ModelUsageLog::where('created_at', '>=', now()->subWeek())->sum('estimated_cost'), 4),
+            'total' => round((float) ModelUsageLog::sum('estimated_cost'), 4),
+        ];
+        return view('admin.agents.index', ['agents' => $rows, 'tasks' => AgentTask::orderBy('id', 'desc')->paginate(25), 'byModel' => $byModel, 'spend' => $spend, 'failures' => ModelUsageLog::where('status', '!=', 'OK')->orderBy('id', 'desc')->limit(15)->get()]);
     }
 
     public function runAgent(Request $request, string $agent)

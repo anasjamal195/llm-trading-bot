@@ -19,6 +19,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('market/{symbol}', [DashboardController::class, 'symbol'])->name('market.symbol');
         Route::get('currencies', [DashboardController::class, 'currencies'])->name('currencies');
         Route::get('activity', [DashboardController::class, 'activity'])->name('activity');
+        Route::get('logs', [SystemController::class, 'logs'])->name('logs');
 
         Route::get('proposals', [TradingController::class, 'proposals'])->name('proposals');
         Route::get('orders/pending', [TradingController::class, 'pendingOrders'])->name('orders.pending');

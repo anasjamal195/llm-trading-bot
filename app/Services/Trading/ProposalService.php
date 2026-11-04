@@ -18,7 +18,7 @@ use App\Services\Risk\RiskManagementService;
  */
 class ProposalService
 {
-    public function __construct(private RiskManagementService $risk) {}
+    public function __construct(private RiskManagementService $risk, private \App\Services\System\AppLogger $log) {}
 
     public function handleDecision(AgentTask $task, array $data): void
     {
@@ -63,6 +63,7 @@ class ProposalService
 
         if (! $check['approved']) {
             TradeProposalRejected::dispatch($proposal->symbol, implode('; ', $check['reasons']));
+            $this->log->warning('trading', "Proposal #{$proposal->id} REJECTED {$proposal->symbol}", ['reasons' => $check['reasons']]);
             return;
         }
 
@@ -84,6 +85,7 @@ class ProposalService
             'created_by' => 'trade_decision',
         ]);
         $proposal->update(['status' => 'ORDERED']);
+        $this->log->info('trading', "Proposal #{$proposal->id} APPROVED → order #{$order->id} {$proposal->symbol} {$proposal->direction} vol {$check['volume']}", ['risk' => $check['risk_amount']]);
         \App\Events\PaperOrderCreated::dispatch($order);
         TradeProposalCreated::dispatch($proposal);
     }

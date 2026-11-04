@@ -88,10 +88,12 @@ class AgentRunJob implements ShouldQueue
     {
         $ctx = $task->input_context ?? [];
         if ($task->symbol) {
+            $tf = app(\App\Services\MarketData\MarketDataService::class)->analysisTimeframe($task->symbol);
             $snap = \App\Models\MarketSnapshot::where('symbol', $task->symbol)->orderBy('id', 'desc')->first();
-            $candles = \App\Models\Candle::where('symbol', $task->symbol)->where('timeframe', 'H1')
+            $candles = \App\Models\Candle::where('symbol', $task->symbol)->where('timeframe', $tf)
                 ->orderBy('candle_time', 'desc')->limit(30)->get()
                 ->map(fn ($c) => ['t' => $c->candle_time->toIso8601String(), 'o' => $c->open, 'h' => $c->high, 'l' => $c->low, 'c' => $c->close])->all();
+            $ctx['timeframe'] = $tf;
             $ctx['snapshot'] = $snap?->toArray();
             $ctx['recent_h1'] = array_reverse($candles);
             $ctx['open_positions'] = \App\Models\PaperPosition::where('symbol', $task->symbol)->where('status', 'OPEN')->get()->toArray();

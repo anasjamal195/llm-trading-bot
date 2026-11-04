@@ -26,6 +26,13 @@ Reverb-compatible Pusher WebSocket server.
   `startTime/endTime` are **milliseconds**. Never sends orders.
 - `app/Services/MarketData/MarketDataService.php` — cursor sync, gap
   detection, batch upserts, completed-candle preference, snapshots, health.
+  **Automatic timeframe selection**: each symbol carries an
+  `analysis_timeframe` pinned by the discovery agent from the deterministic
+  `timeframe.regime_map` (TRENDING→H4, RANGING→M15, VOLATILE→H1).
+  Execution and SL/TP monitoring always stay on M1.
+- `app/Services/System/AppLogger.php` — dual logging to Monolog channels
+  (`trading.log`, `agents.log`, 30-day rotation) AND the `system_logs` table
+  (admin System Logs page), with secret redaction.
 - `app/Agents/*` — 10 agents (discovery, news, currency, analysis,
   strategy, decision, management, performance, improvement, chief) with
   persisted `agent_tasks` (lease, retry, dedupe, expiry).

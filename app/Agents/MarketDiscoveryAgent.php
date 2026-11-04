@@ -33,7 +33,11 @@ class MarketDiscoveryAgent extends BaseAgent
                 'suitable' => (bool) ($r['suitable'] ?? false),
                 'regime' => $r['regime'] ?? null, 'reasons' => $r['reasons'] ?? null,
             ]);
+            // Automatic timeframe selection: pin the symbol's analysis lens to its regime.
+            $tf = \App\Services\MarketData\MarketDataService::regimeTimeframe($r['regime'] ?? 'UNKNOWN');
+            \App\Models\TradingSymbol::where('symbol', $r['symbol'])->update(['analysis_timeframe' => $tf]);
         }
+        app(\App\Services\System\AppLogger::class)->info('agent', 'Discovery updated analysis timeframes', ['rankings' => count($data['rankings'] ?? [])]);
         \App\Events\PairRankingUpdated::dispatch($data);
     }
 }

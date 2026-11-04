@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\DB;
  */
 class PaperBrokerService
 {
+    public function __construct(private \App\Services\System\AppLogger $log) {}
     public function spreadPrice(TradingSymbol $ts, float $mid, string $side): float
     {
         // Spread stored in pips; approximate price offset = spread_pips * pipSize / 2 per side.
@@ -56,6 +57,7 @@ class PaperBrokerService
             }
             if (now()->greaterThan($order->expires_at)) {
                 $order->update(['status' => 'EXPIRED']);
+                $this->log->info('broker', "Order #{$order->id} EXPIRED {$order->symbol}");
                 PaperOrderExpired::dispatch($order);
                 return ['order_id' => $order->id, 'action' => 'EXPIRED'];
             }
@@ -119,6 +121,7 @@ class PaperBrokerService
             }
             $this->refreshEquity($account);
 
+            $this->log->info('broker', "Order #{$order->id} FILLED {$order->symbol} {$order->direction} @ {$entry}", ['position_id' => $position->id ?? null, 'ambiguous' => $ambiguous]);
             PaperOrderFilled::dispatch($order);
             PaperPositionOpened::dispatch($position);
             return ['order_id' => $order->id, 'action' => 'FILLED', 'position_id' => $position->id, 'ambiguous' => $ambiguous];
@@ -242,6 +245,7 @@ class PaperBrokerService
         PaperTransaction::record($account, $net >= 0 ? 'TRADE_PROFIT' : 'TRADE_LOSS', $net, $p, "Close #{$p->id} {$reason} @ {$exit}");
         $this->refreshEquity($account);
 
+        $this->log->info('broker', "Position #{$p->id} CLOSED {$p->symbol} {$reason} @ {$exit} P&L {$net}", ['ambiguous' => $ambiguous]);
         PaperPositionClosed::dispatch($p);
         return ['position_id' => $p->id, 'action' => 'CLOSED', 'reason' => $reason, 'exit' => $exit, 'pnl' => $net, 'ambiguous' => $ambiguous];
     }

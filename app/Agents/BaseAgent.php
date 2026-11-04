@@ -38,6 +38,7 @@ abstract class BaseAgent
 
         if (! $result['ok']) {
             $task->update(['status' => 'FAILED', 'error_message' => substr($result['error'] ?? 'unknown', 0, 1000), 'retry_count' => $task->retry_count + 1]);
+            app(\App\Services\System\AppLogger::class)->warning('agent', "{$this->name()} task #{$task->id} failed", ['error' => substr($result['error'] ?? 'unknown', 0, 200)]);
             \App\Events\AgentExecutionFailed::dispatch($task);
             return ['ok' => false, 'error' => $result['error'] ?? 'unknown'];
         }
@@ -50,6 +51,8 @@ abstract class BaseAgent
         }
 
         $task->update(['status' => 'COMPLETED', 'output_result' => $result['data'], 'completed_at' => now(), 'next_run_at' => $this->nextRun($result['data'])]);
+        $usage = $result['usage'] ?? [];
+        app(\App\Services\System\AppLogger::class)->info('agent', "{$this->name()} task #{$task->id} completed", ['in_tokens' => $usage['prompt_tokens'] ?? null, 'out_tokens' => $usage['completion_tokens'] ?? null]);
         \App\Events\AgentExecutionCompleted::dispatch($task);
         $this->afterComplete($task, $result['data']);
         return ['ok' => true, 'data' => $result['data']];

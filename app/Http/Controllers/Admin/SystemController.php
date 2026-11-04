@@ -93,4 +93,12 @@ class SystemController extends Controller
             'pending' => \App\Models\PaperOrder::where('status', 'PENDING')->count(),
         ]);
     }
+
+    public function logs(\Illuminate\Http\Request $request)
+    {
+        $q = \App\Models\SystemLog::orderBy('id', 'desc');
+        if ($request->level) $q->where('level', $request->level);
+        if ($request->component) $q->where('component', 'like', '%' . $request->component . '%');
+        return view('admin.logs.index', ['logs' => $q->paginate(50)]);
+    }
 }

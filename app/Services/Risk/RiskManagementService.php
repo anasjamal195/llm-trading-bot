@@ -109,7 +109,9 @@ class RiskManagementService
             $riskAmount = round($equity * $riskPct / 100, 2);
             $volume = $this->volumeForRisk($ts, $slDist, $riskAmount);
             $maxVol = (float) $this->get('max_volume_lots', 1.0);
-            if ($volume > $maxVol) { $volume = $maxVol; $riskAmount = $this->riskForVolume($ts, $slDist, $volume); }
+            if ($volume > $maxVol) { $volume = $maxVol; }
+            $volume = round($volume, 2);
+            $riskAmount = $this->riskForVolume($ts, $slDist, $volume);
             if ($volume < 0.01) $reasons[] = 'Computed volume below minimum 0.01 lots';
         }
 

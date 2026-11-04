@@ -111,6 +111,16 @@ class OpenRouterService
         return ['ok' => false, 'error' => $lastError];
     }
 
+    /** Per-model USD price per 1M tokens. Admin-editable estimates; verify on OpenRouter. */
+    public function priceFor(string $model): array
+    {
+        $pricing = json_decode((string) Setting::get('openrouter.pricing', '{}'), true) ?: [];
+        if (isset($pricing[$model]['in'], $pricing[$model]['out'])) {
+            return ['in' => (float) $pricing[$model]['in'], 'out' => (float) $pricing[$model]['out']];
+        }
+        return ['in' => 1.00, 'out' => 2.00];
+    }
+
     private function extractJson(string $content): ?array
     {
         $decoded = json_decode($content, true);
@@ -128,6 +138,7 @@ class OpenRouterService
         try {
             $in = (int) ($usage['prompt_tokens'] ?? 0);
             $out = (int) ($usage['completion_tokens'] ?? 0);
+            $price = $this->priceFor($model);
             ModelUsageLog::create([
                 'agent_task_id' => $taskId,
                 'agent_name' => $agent,
@@ -135,7 +146,7 @@ class OpenRouterService
                 'input_tokens' => $in ?: null,
                 'output_tokens' => $out ?: null,
                 'latency_ms' => (int) (microtime(true) * 1000) - $started,
-                'estimated_cost' => round(($in * 0.000001 + $out * 0.000002), 6),
+                'estimated_cost' => round(($in * $price['in'] + $out * $price['out']) / 1000000, 6),
                 'status' => $status,
                 'error' => $error ? substr($error, 0, 1000) : null,
             ]);
