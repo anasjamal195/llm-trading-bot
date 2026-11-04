@@ -14,25 +14,16 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // Production admin login. Credentials come from the environment so no
-        // secret is ever committed. Generate: SEED_ADMIN_PASSWORD=$(openssl rand -hex 12)
+        // Production admin login. Override with SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD
+        // environment variables when seeding. Change the password after first login.
         $adminEmail = env('SEED_ADMIN_EMAIL', 'admin@tradingbot.graphichat.ai');
-        $adminPass = env('SEED_ADMIN_PASSWORD', '');
-        $generated = false;
-        if ($adminPass === '') {
-            $adminPass = bin2hex(random_bytes(12));
-            $generated = true;
-        }
+        $adminPass = env('SEED_ADMIN_PASSWORD', 'yXbeenwrPEj2q4FFQpwY');
         AdminUser::updateOrCreate(['email' => $adminEmail], [
             'name' => 'Administrator', 'password' => Hash::make($adminPass), 'is_enabled' => true,
         ]);
         // Remove the default placeholder login if it exists.
         AdminUser::where('email', 'admin@example.com')->where('email', '!=', $adminEmail)->delete();
-        if ($generated) {
-            $this->command->info("Seeded admin: {$adminEmail}");
-            $this->command->info("Generated admin password: {$adminPass}");
-            $this->command->warn('Store this password securely — it is not saved anywhere else.');
-        }
+        $this->command->info("Seeded admin: {$adminEmail}");
 
         TradingAccount::firstOrCreate(['id' => 1], [
             'name' => 'Primary Paper Account', 'currency' => 'USD',
