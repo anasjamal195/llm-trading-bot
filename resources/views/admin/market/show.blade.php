@@ -20,7 +20,7 @@
 @section('scripts')
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-const rows = @json($candles->map(fn($c)=>['t'=>$c->candle_time->format('m-d H:i'),'c'=>(float)$c->close,'h'=>(float)$c->high,'l'=>(float)$c->low]));
+const rows = @json($chart);
 new Chart(document.getElementById('candles'),{type:'line',
 data:{labels:rows.map(r=>r.t),datasets:[{label:'close',data:rows.map(r=>r.c),borderColor:'#3b82f6',pointRadius:0,tension:.1},{label:'high',data:rows.map(r=>r.h),borderColor:'#94a3b855',pointRadius:0},{label:'low',data:rows.map(r=>r.l),borderColor:'#94a3b855',pointRadius:0}]},
 options:{plugins:{legend:{display:false}}}});

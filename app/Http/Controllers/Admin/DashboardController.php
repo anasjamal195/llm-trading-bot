@@ -63,8 +63,12 @@ class DashboardController extends Controller
     {
         $candles = \App\Models\Candle::where('symbol', strtoupper($symbol))->where('timeframe', request('tf', 'H1'))
             ->orderBy('candle_time', 'desc')->limit(200)->get()->reverse()->values();
+        $chart = $candles->map(fn ($c) => [
+            't' => $c->candle_time->format('m-d H:i'),
+            'c' => (float) $c->close, 'h' => (float) $c->high, 'l' => (float) $c->low,
+        ])->all();
         return view('admin.market.show', [
-            'symbol' => strtoupper($symbol), 'candles' => $candles,
+            'symbol' => strtoupper($symbol), 'candles' => $candles, 'chart' => $chart,
             'timeframe' => request('tf', 'H1'),
             'snapshot' => MarketSnapshot::where('symbol', strtoupper($symbol))->orderBy('id', 'desc')->first(),
             'positions' => PaperPosition::where('symbol', strtoupper($symbol))->orderBy('id', 'desc')->limit(20)->get(),
