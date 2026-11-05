@@ -34,7 +34,7 @@ class MarketInitializationJob implements ShouldQueue
             $provider = app(\App\Services\MT5\CandleProvider::class);
             $health = $provider->health();
             if (! ($health['ok'] ?? false)) {
-                throw new \RuntimeException('MT5 bridge not connected: ' . json_encode($health['body'] ?? $health));
+                throw new \RuntimeException('MT5 bridge not connected. ' . ($health['reason'] ?? json_encode($health['body'] ?? $health)));
             }
             // 2. Discover + reconcile symbols.
             try {

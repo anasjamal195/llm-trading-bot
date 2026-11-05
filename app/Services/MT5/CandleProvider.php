@@ -51,14 +51,23 @@ class CandleProvider
         try {
             $res = $this->client()->get(rtrim($this->baseUrl, '/') . '/health');
             if ($res->failed()) {
-                return ['ok' => false, 'status' => $res->status(), 'body' => $res->json()];
+                return ['ok' => false, 'status' => $res->status(), 'body' => $res->json(), 'reason' => 'Bridge HTTP ' . $res->status()];
             }
             $body = $res->json();
-            $ok = (bool) ($body['initialized'] ?? false) && (bool) ($body['connected'] ?? false);
-            return ['ok' => $ok, 'body' => $body];
+            $initialized = (bool) ($body['initialized'] ?? false);
+            $connected = (bool) ($body['connected'] ?? false);
+            $reason = null;
+            if ($initialized && ! $connected) {
+                $reason = 'MT5 terminal initialized but NOT logged into its trade server'
+                    . ' (' . ($body['company'] ?? '?') . ' / ' . ($body['server'] ?? '?') . ').'
+                    . ' The bridge needs a working MT5 login — check the bridge container/terminal, not this app.';
+            } elseif (! $initialized) {
+                $reason = 'MT5 terminal not initialized in the bridge.';
+            }
+            return ['ok' => $initialized && $connected, 'body' => $body, 'reason' => $reason];
         } catch (\Throwable $e) {
             Log::warning('MT5 health check failed', ['error' => $e->getMessage()]);
-            return ['ok' => false, 'error' => $e->getMessage()];
+            return ['ok' => false, 'error' => $e->getMessage(), 'reason' => 'Bridge unreachable: ' . $e->getMessage()];
         }
     }
 
