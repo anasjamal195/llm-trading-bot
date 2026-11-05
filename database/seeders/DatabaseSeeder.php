@@ -113,7 +113,7 @@ class DatabaseSeeder extends Seeder
             'timeframe.regime_map' => '{"TRENDING":"H4","RANGING":"M15","VOLATILE":"H1","UNKNOWN":"H1"}',
             'openrouter.pricing' => '{"deepseek/deepseek-chat":{"in":0.14,"out":0.28},"deepseek/deepseek-v3.2":{"in":0.26,"out":0.38},"meta-llama/llama-3.3-70b-instruct":{"in":0.35,"out":0.4},"openai/gpt-4o-mini":{"in":0.15,"out":0.6},"anthropic/claude-3.5-haiku":{"in":0.8,"out":4.0},"google/gemini-flash-1.5":{"in":0.075,"out":0.3},"perplexity/sonar":{"in":1.0,"out":1.0},"perplexity/sonar-pro":{"in":3.0,"out":15.0}}',
             'news.provider' => 'manual',
-            'notifications.alert_email' => 'anasj5749@gmail.com,tanveer@egeniuscare.com',
+            'notifications.alert_email' => 'anasj5749@gmail.com,graphichat.ai@gmail.com',
         ];
 
         // OpenRouter gateway key (stored encrypted). NEVER hardcode the key here:

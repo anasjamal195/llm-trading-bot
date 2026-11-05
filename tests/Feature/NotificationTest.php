@@ -14,12 +14,12 @@ class NotificationTest extends TestCase
 
     public function test_alert_supports_multiple_recipients(): void
     {
-        Setting::put('notifications.alert_email', 'anasj5749@gmail.com, tanveer@egeniuscare.com , not-an-email', 'notifications');
+        Setting::put('notifications.alert_email', 'anasj5749@gmail.com, graphichat.ai@gmail.com , not-an-email', 'notifications');
         $svc = app(NotifyService::class);
-        $this->assertSame(['anasj5749@gmail.com', 'tanveer@egeniuscare.com'], $svc->recipients());
+        $this->assertSame(['anasj5749@gmail.com', 'graphichat.ai@gmail.com'], $svc->recipients());
         $this->assertTrue($svc->alert('test_event', 'Hello', 'Body here'));
         $this->assertSame(2, NotificationLog::where('type', 'test_event')->count());
-        $this->assertSame(['anasj5749@gmail.com', 'tanveer@egeniuscare.com'], NotificationLog::where('type', 'test_event')->orderBy('id')->pluck('recipient')->all());
+        $this->assertSame(['anasj5749@gmail.com', 'graphichat.ai@gmail.com'], NotificationLog::where('type', 'test_event')->orderBy('id')->pluck('recipient')->all());
         // Cooldown suppresses the duplicate.
         $this->assertFalse($svc->alert('test_event', 'Hello', 'Body here'));
         $this->assertSame(2, NotificationLog::where('type', 'test_event')->count());
