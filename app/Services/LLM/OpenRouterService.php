@@ -58,7 +58,7 @@ class OpenRouterService
         }
 
         $temperature = (float) Setting::get('openrouter.temperature', 0.2);
-        $maxTokens = (int) Setting::get('openrouter.max_tokens', 1500);
+        $maxTokens = (int) (Setting::get("openrouter.max_tokens.{$agent}", Setting::get('openrouter.max_tokens', 1500)));
         $timeout = (int) Setting::get('openrouter.timeout', 60);
         $retries = (int) Setting::get('openrouter.retries', 2);
 

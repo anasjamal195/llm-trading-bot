@@ -35,6 +35,11 @@ abstract class BaseAgent
         $prompt = PromptVersion::activeFor($this->name());
         $system = $prompt?->system_prompt ?? $this->systemPrompt();
         $result = $this->llm->chatJson($this->name(), $system, $task->input_context ?? [], ['agent_task_id' => $task->id]);
+        // One immediate retry on malformed JSON (often truncation): cheap and
+        // recovers most transient format failures without losing the task.
+        if (! $result['ok'] && ($result['error'] ?? '') === 'Invalid JSON from model') {
+            $result = $this->llm->chatJson($this->name(), $system, $task->input_context ?? [], ['agent_task_id' => $task->id]);
+        }
 
         if (! $result['ok']) {
             $task->update(['status' => 'FAILED', 'error_message' => substr($result['error'] ?? 'unknown', 0, 1000), 'retry_count' => $task->retry_count + 1]);

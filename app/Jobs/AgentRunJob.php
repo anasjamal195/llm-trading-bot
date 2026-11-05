@@ -95,10 +95,19 @@ class AgentRunJob implements ShouldQueue
                 ->map(fn ($n) => ['headline' => $n->headline, 'source' => $n->source, 'url' => $n->url, 'published_at' => $n->published_at?->toIso8601String(), 'currency' => $n->currency])->all();
         }
         if ($task->task_type === 'coordinate' || $task->task_type === 'discover_pairs') {
-            $ctx['snapshots'] = \App\Models\MarketSnapshot::orderBy('id', 'desc')->limit(20)->get()->toArray();
-            $ctx['currencies'] = \App\Models\CurrencyResearch::orderBy('id', 'desc')->limit(10)->get()->toArray();
-            $ctx['rankings'] = \App\Models\PairRanking::orderBy('id', 'desc')->limit(10)->get()->toArray();
-            $ctx['open_positions'] = \App\Models\PaperPosition::where('status', 'OPEN')->get()->toArray();
+            // Compact projector: provider context windows can be small
+            // (llama via some providers is 4k). Send essentials only.
+            $ctx['snapshots'] = \App\Models\MarketSnapshot::orderBy('id', 'desc')->limit(40)->get()
+                ->groupBy('symbol')->map(fn ($g) => $g->first())->values()->take(13)
+                ->map(fn ($s) => ['symbol' => $s->symbol, 'price' => $s->price, 'trend' => $s->trend, 'regime' => $s->regime, 'rsi' => $s->indicators['rsi14'] ?? null])->all();
+            $ctx['currencies'] = \App\Models\CurrencyResearch::orderBy('id', 'desc')->limit(20)->get()
+                ->groupBy('currency')->map(fn ($g) => $g->first())->values()->take(10)
+                ->map(fn ($c) => ['currency' => $c->currency, 'outlook' => $c->outlook, 'confidence' => $c->confidence])->all();
+            $ctx['rankings'] = \App\Models\PairRanking::orderBy('id', 'desc')->limit(26)->get()
+                ->groupBy('symbol')->map(fn ($g) => $g->first())->values()->take(13)
+                ->map(fn ($r) => ['symbol' => $r->symbol, 'score' => $r->score, 'suitable' => $r->suitable, 'regime' => $r->regime])->all();
+            $ctx['open_positions'] = \App\Models\PaperPosition::where('status', 'OPEN')->limit(10)->get()
+                ->map(fn ($p) => ['symbol' => $p->symbol, 'direction' => $p->direction, 'entry' => $p->entry_price, 'unrealized' => $p->unrealized_pnl])->all();
             $ctx['risk'] = ['kill_switch' => \App\Models\Setting::get('risk.kill_switch', ''), 'daily_pnl' => app(\App\Services\Risk\RiskManagementService::class)->dailyRealizedPnl(), 'consecutive_losses' => app(\App\Services\Risk\RiskManagementService::class)->consecutiveLosses()];
         }
         if ($task->symbol) {
@@ -114,12 +123,10 @@ class AgentRunJob implements ShouldQueue
         }
         if ($task->currency) {
             $ctx['currency_research'] = \App\Models\CurrencyResearch::where('currency', $task->currency)->orderBy('id', 'desc')->first()?->toArray();
-            $ctx['news'] = \App\Models\NewsArticle::where('currency', $task->currency)->orderBy('published_at', 'desc')->limit(10)->get()->toArray();
+            $ctx['news'] = \App\Models\NewsArticle::where('currency', $task->currency)->orderBy('published_at', 'desc')->limit(10)->get()
+                ->map(fn ($n) => ['headline' => $n->headline, 'source' => $n->source, 'sentiment' => $n->sentiment, 'impact' => $n->impact, 'published_at' => $n->published_at?->toIso8601String()])->all();
         }
-        if ($task->task_type === 'discover_pairs') {
-            $ctx['snapshots'] = \App\Models\MarketSnapshot::orderBy('id', 'desc')->limit(20)->get()->toArray();
-            $ctx['currencies'] = \App\Models\CurrencyResearch::orderBy('id', 'desc')->limit(10)->get()->toArray();
-        }
+        // (discover_pairs context is built in the compact coordinate branch above.)
         if ($task->task_type === 'review_position' && isset($ctx['paper_position_id'])) {
             $ctx['position'] = \App\Models\PaperPosition::find($ctx['paper_position_id'])?->toArray();
         }
