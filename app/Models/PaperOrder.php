@@ -14,6 +14,11 @@ class PaperOrder extends Model
         return $this->belongsTo(TradeProposal::class, 'trade_proposal_id');
     }
 
+    public function tradingAccount()
+    {
+        return $this->belongsTo(TradingAccount::class, 'trading_account_id');
+    }
+
     public function position()
     {
         return $this->hasOne(PaperPosition::class, 'paper_order_id');

@@ -30,7 +30,7 @@
 <div class="grid md:grid-cols-2 gap-2">
 @foreach($items as $item)
 <label class="text-xs block">{{ $item->key }}
-@if(in_array($item->key, ['openrouter.api_key','news.api_key']))<input type="password" name="settings[{{ $item->key }}]" placeholder="(stored — leave blank to keep)" autocomplete="new-password" class="w-full rounded border px-2 py-1 bg-white dark:bg-slate-900">
+@if(in_array($item->key, ['openrouter.api_key','news.api_key','webhook.signals_secret']))<input type="password" name="settings[{{ $item->key }}]" placeholder="(stored — leave blank to keep)" autocomplete="new-password" class="w-full rounded border px-2 py-1 bg-white dark:bg-slate-900">
 @else<input name="settings[{{ $item->key }}]" value="{{ $item->is_encrypted ? '' : $item->value }}" placeholder="{{ $item->is_encrypted ? '(encrypted — leave blank to keep)' : '' }}" class="w-full rounded border px-2 py-1 bg-white dark:bg-slate-900">@endif</label>
 @endforeach
 </div>

@@ -32,7 +32,7 @@ class SystemController extends Controller
     public function saveSettings(Request $request)
     {
         $data = $request->validate(['settings' => 'array']);
-        $encrypted = ['openrouter.api_key', 'news.api_key'];
+        $encrypted = ['openrouter.api_key', 'news.api_key', 'webhook.signals_secret'];
         foreach ($data['settings'] ?? [] as $key => $value) {
             if (! preg_match('/^[a-z0-9._-]+$/i', $key)) continue;
             if (in_array($key, ['openrouter.api_key', 'news.api_key'], true) && ($value === '' || $value === null)) continue; // keep existing

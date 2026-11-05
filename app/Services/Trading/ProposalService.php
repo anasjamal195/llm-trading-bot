@@ -5,6 +5,7 @@ namespace App\Services\Trading;
 use App\Events\PaperOrderCreated;
 use App\Events\TradeProposalCreated;
 use App\Events\TradeProposalRejected;
+use App\Jobs\SendSignalWebhookJob;
 use App\Models\AgentTask;
 use App\Models\PaperOrder;
 use App\Models\Setting;
@@ -70,8 +71,7 @@ class ProposalService
         }
 
         $account = TradingAccount::where('is_active', true)->first();
-        $maxLifetime = (int) Setting::get('risk.max_pending_order_hours', 24);
-        $expiry = now()->addMinutes(min((int) ($data['expiry_minutes'] ?? 120), $maxLifetime * 60));
+        $maxLifetime = (int) Setting::get('risk.max_pending_order_hours', 24);        $expiry = now()->addMinutes(min((int) ($data['expiry_minutes'] ?? 120), $maxLifetime * 60));
 
         $order = PaperOrder::create([
             'trading_account_id' => $account->id,
@@ -89,6 +89,7 @@ class ProposalService
         $proposal->update(['status' => 'ORDERED']);
         $this->log->info('trading', "Proposal #{$proposal->id} APPROVED → order #{$order->id} {$proposal->symbol} {$proposal->direction} vol {$check['volume']}", ['risk' => $check['risk_amount']]);
         \App\Events\PaperOrderCreated::dispatch($order);
+        SendSignalWebhookJob::dispatch($order->id, 'live')->onQueue('notifications');
         TradeProposalCreated::dispatch($proposal);
     }
 }

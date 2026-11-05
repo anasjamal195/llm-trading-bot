@@ -118,6 +118,10 @@ class DatabaseSeeder extends Seeder
             'protect.breakeven_r' => '1.0',
             'protect.trailing_r' => '0.5',
             'tick_monitor.seconds' => '50',
+            'webhook.enabled' => '',
+            'webhook.signals_url' => 'https://graphichat.ai/webhook/signals',
+            'webhook.signals_secret' => '',
+            'webhook.timeout' => '10',
             'news.provider' => 'manual',
             'notifications.alert_email' => 'anasj5749@gmail.com,graphichat.ai@gmail.com',
         ];
