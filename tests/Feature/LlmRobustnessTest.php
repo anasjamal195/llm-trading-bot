@@ -50,6 +50,7 @@ class LlmRobustnessTest extends TestCase
     public function test_per_agent_max_tokens_and_pricing(): void
     {
         Setting::put('openrouter.api_key', 'test-key', 'openrouter');
+        Setting::put('openrouter.pricing', '{"deepseek/deepseek-v3.2":{"in":0.26,"out":0.38}}', 'openrouter');
         Setting::put('openrouter.max_tokens.chief_trading', '2500', 'openrouter');
         Http::fake(['*' => Http::response(['choices' => [['message' => ['content' => '{"actions":[],"next_review_minutes":30}']]], 'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5]])]);
         $svc = app(OpenRouterService::class);
