@@ -9,4 +9,9 @@ class TradeAnalysis extends Model
     protected $table = 'trade_analyses';
     protected $fillable = ['paper_position_id', 'prediction_summary', 'outcome_summary', 'entry_quality', 'exit_quality', 'lessons', 'metrics', 'model'];
     protected $casts = ['metrics' => 'array'];
+
+    public function paperPosition()
+    {
+        return $this->belongsTo(PaperPosition::class, 'paper_position_id');
+    }
 }

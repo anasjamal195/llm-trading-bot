@@ -52,6 +52,7 @@ class ProposalService
             'entry' => $entry, 'stop_loss' => $sl, 'take_profit' => $tp,
             'strategy_code' => $data['strategy'] ?? null,
             'confidence' => $data['confidence'] ?? null,
+            'probability' => isset($data['probability']) ? max(0, min(1, (float) $data['probability'])) : null,
             'expected_holding_hours' => isset($data['expected_holding_hours']) ? max(1, (int) $data['expected_holding_hours']) : null,
             'rationale' => $data['rationale'] ?? null,
             'invalidation' => $data['invalidation'] ?? null,

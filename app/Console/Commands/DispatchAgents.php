@@ -35,6 +35,19 @@ class DispatchAgents extends Command
                 'scheduled_at' => now(), 'dedupe_key' => 'chief|' . date('YmdHi', (int) (time() / 1800) * 1800),
             ]);
         }
+        // Improvement pulse: weekly review once enough fresh closed trades exist.
+        $lastImprovement = AgentTask::where('agent_name', 'strategy_improvement')->where('status', 'COMPLETED')->orderBy('completed_at', 'desc')->first();
+        $freshClosed = \App\Models\PaperPosition::where('status', 'CLOSED')
+            ->when($lastImprovement?->completed_at, fn ($q, $t) => $q->where('closed_at', '>', $t))
+            ->count();
+        if ($freshClosed >= 5 && (! $lastImprovement || $lastImprovement->completed_at->lt(now()->subDays(7)))) {
+            AgentTask::dispatchOnce([
+                'task_type' => 'improve_strategies', 'agent_name' => 'strategy_improvement',
+                'priority' => 3, 'status' => 'PENDING',
+                'input_context' => ['trigger' => 'weekly_pulse', 'fresh_closed' => $freshClosed],
+                'scheduled_at' => now(), 'dedupe_key' => 'improve|' . date('Ymd'),
+            ]);
+        }
         AgentTask::where('status', 'PENDING')->where('scheduled_at', '<=', now())
             ->orderBy('priority', 'desc')->orderBy('id')->limit(10)->get()
             ->each(function ($task) {

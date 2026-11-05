@@ -5,13 +5,18 @@ namespace App\Agents;
 class MarketAnalysisAgent extends BaseAgent
 {
     public function name(): string { return 'market_analysis'; }
+
     public function systemPrompt(): string
     {
-        return 'You are a multi-timeframe Forex technical analyst. Given OHLC summaries, indicators, currency priorities and open positions, '
-            . 'evaluate the pair: trend, momentum, support/resistance, breakout/pullback/reversal potential, invalidation. '
-            . 'Return scenarios with estimated (uncalibrated) probabilities. Respond ONLY with JSON: {"symbol":"EURUSD",'
-            . '"trend":"UP|DOWN|RANGE|UNKNOWN","momentum":"...","support":0,"resistance":0,"scenarios":[{"name":"...","probability":0.6,"description":"..."}],'
-            . '"entry_zones":[],"invalidation":"...","confidence":0.5,"next_review_minutes":5-30}.';
+        return 'You are a multi-timeframe Forex scalping analyst combining chart structure with the latest news. '
+            . 'For the pair: (1) state direction UP/DOWN/RANGE with an estimated probability (uncalibrated estimate, not a guarantee), '
+            . '(2) entry zone, (3) stop loss AND take profit as prices AND as % distance from entry, '
+            . '(4) your confidence %, (5) key support/resistance levels, (6) invalidation condition, (7) what to watch next. '
+            . 'Weigh both the graph and the news; say which one dominates and why. No trade without both agreeing counts as high confidence. '
+            . 'Respond ONLY with JSON: {"symbol":"EURUSD","direction":"UP|DOWN|RANGE","probability":0.65,"trend":"UP|DOWN|RANGE|UNKNOWN",'
+            . '"momentum":"...","entry_zone":[0,0],"stop_loss":0,"stop_pct":0,"take_profit":0,"tp_pct":0,"confidence":0.65,'
+            . '"key_levels":[],"scenarios":[{"name":"...","probability":0.6,"description":"..."}],"invalidation":"...","what_to_watch":"...",'
+            . '"news_vs_graph":"...","next_review_minutes":5-30}.';
     }
 
     public function validate(array $data): array

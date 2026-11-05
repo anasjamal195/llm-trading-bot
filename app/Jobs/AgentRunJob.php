@@ -110,6 +110,14 @@ class AgentRunJob implements ShouldQueue
                 ->map(fn ($p) => ['symbol' => $p->symbol, 'direction' => $p->direction, 'entry' => $p->entry_price, 'unrealized' => $p->unrealized_pnl])->all();
             $ctx['risk'] = ['kill_switch' => \App\Models\Setting::get('risk.kill_switch', ''), 'daily_pnl' => app(\App\Services\Risk\RiskManagementService::class)->dailyRealizedPnl(), 'consecutive_losses' => app(\App\Services\Risk\RiskManagementService::class)->consecutiveLosses()];
         }
+        if ($task->task_type === 'evaluate_opportunity' || $task->task_type === 'select_strategy') {
+            // Feed post-trade reasoning back in: recent lessons for this symbol
+            // (or strategy) so agents avoid repeating documented mistakes.
+            $ctx['recent_lessons'] = \App\Models\TradeAnalysis::orderBy('id', 'desc')->limit(30)->get()
+                ->filter(fn ($a) => ! $task->symbol || ($a->paperPosition?->symbol === $task->symbol))
+                ->take(5)->values()
+                ->map(fn ($a) => ['symbol' => $a->paperPosition?->symbol, 'strategy' => $a->paperPosition?->strategy_code, 'entry_quality' => $a->entry_quality, 'exit_quality' => $a->exit_quality, 'lessons' => $a->lessons])->all();
+        }
         if ($task->symbol) {
             $tf = app(\App\Services\MarketData\MarketDataService::class)->analysisTimeframe($task->symbol);
             $snap = \App\Models\MarketSnapshot::where('symbol', $task->symbol)->orderBy('id', 'desc')->first();

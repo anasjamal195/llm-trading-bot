@@ -51,10 +51,18 @@ class RiskManagementService
         if (! in_array($direction, ['BUY', 'SELL'], true)) $reasons[] = 'Invalid direction';
         if ($entry <= 0 || $sl <= 0 || $tp <= 0) $reasons[] = 'Entry/SL/TP must be positive';
         if ($direction === 'BUY' && ! ($sl < $entry && $tp > $entry)) $reasons[] = 'BUY requires SL<entry<TP';
-        if ($direction === 'SELL' && ! ($sl > $entry && $tp < $entry)) $reasons[] = 'SELL requires TP<entry<SL';
+        if ($direction === 'SELL' && ! ($sl > $entry && $tp < $entry)) $reasons[] = 'TP<entry<SL required for SELL';
 
+        // Minimum profit target: take-profit distance as % of entry (scalping floor).
         $slDist = abs($entry - $sl);
         $tpDist = abs($tp - $entry);
+        $minProfitPct = (float) $this->get('min_profit_pct', 0.15);
+        if ($entry > 0 && ($tpDist / $entry * 100) < $minProfitPct) $reasons[] = "Take profit below minimum {$minProfitPct}% of entry";
+
+        // Minimum model confidence gate.
+        $minConf = (float) $this->get('min_confidence', 0.55);
+        if (isset($proposal['confidence']) && (float) $proposal['confidence'] < $minConf) $reasons[] = "Confidence below minimum {$minConf}";
+
         $minRR = (float) $this->get('min_risk_reward', 1.5);
         if ($slDist > 0 && ($tpDist / $slDist) < $minRR) $reasons[] = "Risk/reward below minimum {$minRR}";
 

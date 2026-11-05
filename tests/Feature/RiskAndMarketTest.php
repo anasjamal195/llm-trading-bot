@@ -106,6 +106,27 @@ class RiskAndMarketTest extends TestCase
         $p->toBridgeInterval('XYZ');
     }
 
+    public function test_rejects_take_profit_below_minimum_pct(): void
+    {
+        // 0.10% TP on a 0.15% floor → reject.
+        $res = app(RiskManagementService::class)->validateProposal($this->proposal(['take_profit' => 1.1011]));
+        $this->assertFalse($res['approved']);
+        $this->assertStringContainsString('0.15%', implode(';', $res['reasons']));
+    }
+
+    public function test_rejects_low_confidence(): void
+    {
+        $res = app(RiskManagementService::class)->validateProposal($this->proposal(['confidence' => 0.4]));
+        $this->assertFalse($res['approved']);
+    }
+
+    public function test_accepts_profitable_confident_proposal(): void
+    {
+        // TP 1.1035 on 1.1000 = 0.318% ≥ 0.15%, default fixture has no confidence → gate skipped.
+        $res = app(RiskManagementService::class)->validateProposal($this->proposal(['confidence' => 0.7]));
+        $this->assertTrue($res['approved'], json_encode($res['reasons']));
+    }
+
     public function test_agent_schema_validation(): void
     {
         $agent = app(\App\Agents\TradeDecisionAgent::class);
