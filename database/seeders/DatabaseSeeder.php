@@ -134,6 +134,16 @@ class DatabaseSeeder extends Seeder
         } else {
             $this->command->warn('SEED_OPENROUTER_KEY not set — skipping LLM key seed. Add it in Settings later.');
         }
+
+        // Shared HMAC secret for the outbound signal webhook (stored encrypted).
+        // NEVER hardcode it here: export SEED_WEBHOOK_SECRET=... before seeding.
+        // At runtime the bot also honors SIGNAL_WEBHOOK_SECRET from .env as fallback.
+        $seedWebhook = env('SEED_WEBHOOK_SECRET', '');
+        if ($seedWebhook !== '') {
+            Setting::put('webhook.signals_secret', $seedWebhook, 'webhook', true);
+        } else {
+            $this->command->warn('SEED_WEBHOOK_SECRET not set — skipping webhook secret seed. Add it in Settings (or .env SIGNAL_WEBHOOK_SECRET) later.');
+        }
         foreach ($defaults as $k => $v) {
             Setting::firstOrCreate(['key' => $k], ['value' => $v, 'group' => explode('.', $k)[0]]);
         }

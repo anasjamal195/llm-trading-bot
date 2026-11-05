@@ -27,7 +27,8 @@ class SignalWebhookService
 
     public function sign(string $rawBody, string $timestamp): ?string
     {
-        $secret = (string) Setting::get('webhook.signals_secret', '');
+        // Database setting first, .env SIGNAL_WEBHOOK_SECRET as fallback.
+        $secret = (string) (Setting::get('webhook.signals_secret', '') ?: env('SIGNAL_WEBHOOK_SECRET', ''));
         if ($secret === '') return null;
         return 'sha256=' . hash_hmac('sha256', $timestamp . '.' . $rawBody, $secret);
     }
