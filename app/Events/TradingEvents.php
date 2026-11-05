@@ -155,7 +155,7 @@ class PaperPositionUpdated implements ShouldBroadcast
     use BroadcastsAdmin;
     public function __construct(public \App\Models\PaperPosition $position) {}
     public function broadcastOn(): array { return [new PrivateChannel('trading.positions')]; }
-    public function broadcastWith(): array { return ['id' => $this->position->id, 'symbol' => $this->position->symbol, 'unrealized' => $this->position->unrealized_pnl, 'price' => $this->position->current_price]; }
+    public function broadcastWith(): array { return ['id' => $this->position->id, 'symbol' => $this->position->symbol, 'unrealized' => $this->position->unrealized_pnl, 'price' => $this->position->current_price, 'pct' => $this->position->movePct(), 'r' => $this->position->rMultiple()]; }
 }
 
 class PaperPositionClosed implements ShouldBroadcast

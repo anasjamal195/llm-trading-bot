@@ -2,6 +2,9 @@
 
 use Illuminate\Support\Facades\Schedule;
 
+// Tick-level monitoring (~1s loop, bounded 50s pass, lease-guarded).
+Schedule::job(new \App\Jobs\MonitorTicksJob)->everyMinute()->withoutOverlapping(2);
+
 // Market data sync every minute (bounded jobs).
 Schedule::job(new \App\Jobs\MarketSnapshotJob)->everyFiveMinutes()->withoutOverlapping(5);
 // Candle sync per enabled symbol/timeframe is dispatched by SyncDispatcher command each minute.

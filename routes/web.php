@@ -44,5 +44,6 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('bot', [SystemController::class, 'bot'])->name('bot');
         Route::post('account/reset', [SystemController::class, 'resetAccount'])->name('account.reset');
         Route::get('api/status', [SystemController::class, 'statusApi'])->name('api.status');
+        Route::get('api/candles', [SystemController::class, 'candlesApi'])->name('api.candles');
     });
 });

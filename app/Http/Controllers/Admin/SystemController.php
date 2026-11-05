@@ -101,4 +101,15 @@ class SystemController extends Controller
         if ($request->component) $q->where('component', 'like', '%' . $request->component . '%');
         return view('admin.logs.index', ['logs' => $q->paginate(50)]);
     }
+
+    /** Candles for lightweight-charts: [{time (UTC sec), open, high, low, close}]. */
+    public function candlesApi(\Illuminate\Http\Request $request)
+    {
+        $data = $request->validate(['symbol' => 'required|string|max:12', 'tf' => 'nullable|string|max:4', 'limit' => 'nullable|integer|min:10|max:500']);
+        $rows = \App\Models\Candle::where('symbol', strtoupper($data['symbol']))
+            ->where('timeframe', strtoupper($data['tf'] ?? 'M1'))
+            ->orderBy('candle_time', 'desc')->limit($data['limit'] ?? 200)->get()->reverse()->values()
+            ->map(fn ($c) => ['time' => $c->candle_time->timestamp, 'open' => (float) $c->open, 'high' => (float) $c->high, 'low' => (float) $c->low, 'close' => (float) $c->close]);
+        return response()->json(['symbol' => strtoupper($data['symbol']), 'candles' => $rows]);
+    }
 }

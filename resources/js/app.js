@@ -51,7 +51,7 @@ if (echo) {
     if (row) { const el = row.querySelector(`[data-${field}]`); if (el) el.textContent = val; }
   };
   echo.private('trading.positions')
-    .listen('PaperPositionUpdated', (e) => { bump(null, e.id, 'upl', e.unrealized); bump(null, e.id, 'mark', e.price); })
+    .listen('PaperPositionUpdated', (e) => { bump(null, e.id, 'upl', e.unrealized); bump(null, e.id, 'mark', e.price); bump(null, e.id, 'pct', e.pct + '%'); })
     .listen('PaperPositionClosed', () => setTimeout(() => location.reload(), 1500))
     .listen('PaperPositionOpened', () => setTimeout(() => location.reload(), 1500));
   echo.private('trading.orders').listen('PaperOrderFilled', () => setTimeout(() => location.reload(), 1500));

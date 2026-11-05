@@ -109,6 +109,7 @@ class PaperBrokerService
                 'stop_loss' => $sl,
                 'take_profit' => $tp,
                 'current_price' => $entry,
+                'peak_price' => $entry,
                 'costs' => $costs,
                 'status' => 'OPEN',
                 'opened_at' => now(),
@@ -133,6 +134,175 @@ class PaperBrokerService
             PaperPositionOpened::dispatch($position);
             return ['order_id' => $order->id, 'action' => 'FILLED', 'position_id' => $position->id, 'ambiguous' => $ambiguous];
         });
+    }
+
+    /** Tick-level monitoring for a symbol: evaluates pending orders + open positions against live bid/ask. */
+    public function processPendingOrderTicks(string $symbol, float $bid, float $ask): array
+    {
+        $out = [];
+        $orders = PaperOrder::where('symbol', $symbol)->where('status', 'PENDING')->orderBy('id')->get();
+        foreach ($orders as $order) {
+            $out[] = $this->evaluateOrderTick($order, $bid, $ask);
+        }
+        return $out;
+    }
+
+    public function monitorPositionTicks(string $symbol, float $bid, float $ask): array
+    {
+        $out = [];
+        $positions = PaperPosition::where('symbol', $symbol)->where('status', 'OPEN')->orderBy('id')->get();
+        foreach ($positions as $position) {
+            $out[] = $this->evaluatePositionTick($position, $bid, $ask);
+        }
+        return $out;
+    }
+
+    /**
+     * Limit fills on live quotes. BUY LIMIT lifts the ask, SELL LIMIT hits the
+     * bid. Ticks have a known sequence, so no candle-style ambiguity applies —
+     * but an immediate SL/TP touch on the fill tick is still handled
+     * conservatively (SL first).
+     */
+    private function evaluateOrderTick(PaperOrder $order, float $bid, float $ask): array
+    {
+        return DB::transaction(function () use ($order, $bid, $ask) {
+            $o = PaperOrder::where('id', $order->id)->lockForUpdate()->first();
+            if (! $o || $o->status !== 'PENDING') return ['order_id' => $order->id, 'action' => 'SKIPPED'];
+            if (now()->greaterThan($o->expires_at)) {
+                $o->update(['status' => 'EXPIRED']);
+                $this->log->info('broker', "Order #{$o->id} EXPIRED {$o->symbol}");
+                PaperOrderExpired::dispatch($o);
+                return ['order_id' => $o->id, 'action' => 'EXPIRED'];
+            }
+            $entry = (float) $o->entry_price;
+            $touched = $o->direction === 'BUY' ? ($ask <= $entry) : ($bid >= $entry);
+            if (! $touched) return ['order_id' => $o->id, 'action' => 'NO_FILL'];
+
+            $sl = (float) $o->stop_loss; $tp = (float) $o->take_profit;
+            $slHit = $o->direction === 'BUY' ? ($bid <= $sl) : ($ask >= $sl);
+            $tpHit = $o->direction === 'BUY' ? ($bid >= $tp) : ($ask <= $tp);
+            $ambiguous = $slHit || $tpHit;
+
+            $ts = TradingSymbol::where('symbol', $o->symbol)->first();
+            $account = TradingAccount::where('id', $o->trading_account_id)->lockForUpdate()->first();
+            $costs = $this->executionCosts($ts, (float) $o->volume);
+
+            $o->update(['status' => 'FILLED', 'fill_price' => $entry, 'filled_at' => now(), 'ambiguous_fill' => $ambiguous]);
+            $maxHoldHours = (int) Setting::get('risk.max_holding_hours', 8);
+            $expected = (int) ($o->tradeProposal?->expected_holding_hours ?? 0);
+            if ($expected > 0) $maxHoldHours = min($maxHoldHours, $expected);
+            $position = PaperPosition::create([
+                'trading_account_id' => $o->trading_account_id,
+                'paper_order_id' => $o->id,
+                'symbol' => $o->symbol,
+                'direction' => $o->direction,
+                'entry_price' => $entry,
+                'volume' => $o->volume,
+                'stop_loss' => $sl,
+                'take_profit' => $tp,
+                'current_price' => $entry,
+                'peak_price' => $entry,
+                'costs' => $costs,
+                'status' => 'OPEN',
+                'opened_at' => now(),
+                'max_hold_until' => now()->addHours(max(1, $maxHoldHours)),
+                'next_review_at' => now()->addMinutes(15),
+                'thesis' => $o->tradeProposal?->rationale,
+                'strategy_code' => $o->tradeProposal?->strategy_code,
+                'ambiguous_exit' => false,
+            ]);
+            if ($costs > 0) {
+                $account->balance -= $costs;
+                $account->total_costs += $costs;
+                $account->save();
+                PaperTransaction::record($account, 'COMMISSION', -$costs, $position, "Fill costs order #{$o->id}");
+            }
+            $this->refreshEquity($account);
+            $this->log->info('broker', "Order #{$o->id} FILLED(tick) {$o->symbol} {$o->direction} @ {$entry}", ['position_id' => $position->id ?? null]);
+            PaperOrderFilled::dispatch($o);
+            PaperPositionOpened::dispatch($position);
+            if ($slHit || $tpHit) {
+                // Stop/TP already touched on the fill tick: resolve immediately.
+                return $this->closePosition($position, $slHit ? $sl : $tp, $slHit ? 'STOP_LOSS' : 'TAKE_PROFIT', $slHit && $tpHit);
+            }
+            return ['order_id' => $o->id, 'action' => 'FILLED', 'position_id' => $position->id, 'ambiguous' => $ambiguous];
+        });
+    }
+
+    /** Tick-level position monitoring with executable bid/ask prices + profit protection. */
+    private function evaluatePositionTick(PaperPosition $position, float $bid, float $ask): array
+    {
+        return DB::transaction(function () use ($position, $bid, $ask) {
+            $p = PaperPosition::where('id', $position->id)->lockForUpdate()->first();
+            if (! $p || $p->status !== 'OPEN') return ['position_id' => $position->id, 'action' => 'SKIPPED'];
+            $isBuy = $p->direction === 'BUY';
+            $mark = $isBuy ? $bid : $ask;
+            $sl = (float) $p->stop_loss; $tp = (float) $p->take_profit;
+            $slHit = $isBuy ? ($bid <= $sl) : ($ask >= $sl);
+            $tpHit = $isBuy ? ($bid >= $tp) : ($ask <= $tp);
+
+            $this->applyProtection($p->fresh(), $mark);
+            $p = $p->fresh();
+
+            if ($slHit && $tpHit) return $this->closePosition($p, $sl, 'STOP_LOSS', true);
+            if ($slHit) return $this->closePosition($p, $sl, 'STOP_LOSS', false);
+            if ($tpHit) return $this->closePosition($p, $tp, 'TAKE_PROFIT', false);
+            if (now()->greaterThan($p->max_hold_until)) return $this->closePosition($p, $mark, 'MAX_HOLD', false);
+
+            $p->current_price = $mark;
+            $p->unrealized_pnl = $this->pnl($p->symbol, $p->direction, (float) $p->entry_price, $mark, (float) $p->volume);
+            $p->next_review_at = now()->addMinutes(15);
+            $p->save();
+            $this->refreshEquity($p->trading_account_id);
+            PaperPositionUpdated::dispatch($p);
+            return ['position_id' => $p->id, 'action' => 'HOLD', 'unrealized' => $p->unrealized_pnl];
+        });
+    }
+
+    /**
+     * Deterministic profit protection (the "don't give it all back" rule):
+     * once profit reaches breakeven_r × initial risk, the stop moves to entry;
+     * beyond that, it trails the peak excursion by trailing_r × initial risk.
+     * Only ever tightens. Runs on both tick and candle paths.
+     */
+    public function applyProtection(PaperPosition $position, float $mark): void
+    {
+        if (! (bool) Setting::get('protect.enabled', '1')) return;
+        $p = PaperPosition::where('id', $position->id)->lockForUpdate()->first();
+        if (! $p || $p->status !== 'OPEN' || $mark <= 0) return;
+        $entry = (float) $p->entry_price;
+        $isBuy = $p->direction === 'BUY';
+        $fav = $isBuy ? ($mark - $entry) : ($entry - $mark);
+
+        $peak = (float) ($p->peak_price ?: $entry);
+        if ($fav > 0) {
+            $peak = $isBuy ? max($peak, $mark) : min($peak, $mark);
+            $p->peak_price = $peak;
+        }
+        $initialSl = (float) ($p->order?->stop_loss ?? $p->stop_loss);
+        $riskDist = abs($entry - $initialSl);
+        if ($riskDist <= 0) { $p->save(); return; }
+        $r = $fav / $riskDist;
+        $sl = (float) $p->stop_loss;
+        $moved = false;
+
+        $beR = (float) Setting::get('protect.breakeven_r', 1.0);
+        if ($beR > 0 && $r >= $beR) {
+            $be = $isBuy ? max($sl, $entry) : min($sl, $entry);
+            if ($be !== $sl && (($isBuy && $be > $sl) || (! $isBuy && $be < $sl))) { $sl = $be; $moved = true; }
+        }
+        $trailR = (float) Setting::get('protect.trailing_r', 0.5);
+        if ($trailR > 0 && $fav > 0) {
+            $candidate = $isBuy ? ($peak - $riskDist * $trailR) : ($peak + $riskDist * $trailR);
+            if (($isBuy && $candidate > $sl) || (! $isBuy && $candidate < $sl)) { $sl = $candidate; $moved = true; }
+        }
+        if ($moved) {
+            $p->stop_loss = round($sl, 5);
+            $p->save();
+            $this->log->info('broker', "Protection trailed position #{$p->id} SL to {$p->stop_loss}", ['r' => round($r, 2)]);
+        } else {
+            $p->save();
+        }
     }
 
     /** Monitor open positions against latest candle: SL/TP/max-hold. Idempotent. */
@@ -172,7 +342,10 @@ class PaperBrokerService
                 $exit = $close; $closeReason = 'MAX_HOLD';
             }
 
-            // Mark-to-market.
+            // Mark-to-market. Profit protection tightens the stop for FUTURE
+            // candles only — it must never rewrite this candle's own outcome.
+            $this->applyProtection($p, $close);
+            $p = $p->fresh();
             $p->current_price = $close;
             $p->unrealized_pnl = $this->pnl($p->symbol, $p->direction, (float) $p->entry_price, $close, (float) $p->volume);
             $p->next_review_at = now()->addMinutes(15);
