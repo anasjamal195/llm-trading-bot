@@ -34,6 +34,9 @@ class DatabaseSeeder extends Seeder
             'EURUSD' => ['EUR', 'USD'], 'GBPUSD' => ['GBP', 'USD'], 'USDJPY' => ['USD', 'JPY'],
             'USDCHF' => ['USD', 'CHF'], 'AUDUSD' => ['AUD', 'USD'], 'USDCAD' => ['USD', 'CAD'],
             'NZDUSD' => ['NZD', 'USD'],
+            // Liquid minors for scalping rotation.
+            'EURGBP' => ['EUR', 'GBP'], 'EURJPY' => ['EUR', 'JPY'], 'GBPJPY' => ['GBP', 'JPY'],
+            'AUDJPY' => ['AUD', 'JPY'],
         ];
         foreach ($pairs as $sym => [$base, $quote]) {
             TradingSymbol::firstOrCreate(['symbol' => $sym], [
@@ -51,6 +54,13 @@ class DatabaseSeeder extends Seeder
             'is_enabled' => true, 'is_supported' => true,
             'pip_size' => 0.1, 'spread_pips' => 2.0,
             'contract_size' => 100, 'tick_size' => 0.01, 'tick_value' => 1.0,
+        ]);
+        // Silver: 3-decimal quotes; $1 move on 1 lot (5000oz) = $5000.
+        \App\Models\TradingSymbol::firstOrCreate(['symbol' => 'XAGUSD'], [
+            'base_currency' => 'XAG', 'quote_currency' => 'USD',
+            'is_enabled' => true, 'is_supported' => true,
+            'pip_size' => 0.01, 'spread_pips' => 3.0,
+            'contract_size' => 5000, 'tick_size' => 0.001, 'tick_value' => 5.0,
         ]);
 
         $strategies = [
@@ -76,13 +86,13 @@ class DatabaseSeeder extends Seeder
             'risk.max_consecutive_losses' => '3',
             'risk.min_risk_reward' => '1.5',
             'risk.max_spread_pips' => '5',
-            'risk.max_holding_hours' => '48',
             'risk.max_pending_order_hours' => '24',
+            'risk.max_holding_hours' => '8',
             'risk.max_correlated_exposure' => '1',
             'risk.max_volume_lots' => '1.0',
             'risk.kill_switch' => '',
             'agents.min_interval_minutes' => '2',
-            'agents.pair_cooldown_minutes' => '15',
+            'agents.pair_cooldown_minutes' => '5',
             'openrouter.model.default' => 'meta-llama/llama-3.3-70b-instruct',
             // Cheap search-enabled model for the news agent (live web lookup + citations).
             'openrouter.model.news_research' => 'perplexity/sonar',

@@ -8,8 +8,10 @@ class TradeDecisionAgent extends BaseAgent
 
     public function systemPrompt(): string
     {
-        return 'You convert an analyzed setup into a structured LIMIT-order trade proposal, or decline. Order types allowed: LIMIT_BUY, LIMIT_SELL. '
-            . 'No market orders. Every proposal needs entry, stop loss, take profit with risk/reward >= 1.5, expiry minutes, and invalidation. '
+        return 'You convert an analyzed setup into a structured SCALP LIMIT-order trade proposal, or decline. Order types allowed: LIMIT_BUY, LIMIT_SELL. '
+            . 'No market orders. SCALPING RULES (hard): base the entry on M1/M5 structure only, keep stop distances tight, '
+            . 'expiry_minutes <= 120, expected_holding_hours <= 4. If no scalp setup exists, return NO_TRADE. '
+            . 'Every proposal needs entry, stop loss, take profit with risk/reward >= 1.5, expiry minutes, and invalidation. '
             . 'Respond ONLY with JSON: {"decision":"PROPOSE|NO_TRADE","symbol":"EURUSD","direction":"BUY|SELL","order_type":"LIMIT_BUY|LIMIT_SELL",'
             . '"entry":0,"stop_loss":0,"take_profit":0,"strategy":"...","rationale":"...","invalidation":"...","confidence":0.5,'
             . '"expiry_minutes":120,"expected_holding_hours":12,"next_review_minutes":15}. You never execute orders.';

@@ -94,6 +94,11 @@ class PaperBrokerService
             ]);
 
             $maxHoldHours = (int) Setting::get('risk.max_holding_hours', 48);
+            // Scalp enforcement: the position cannot outlive the proposal's
+            // expected holding time (capped additionally by the risk setting).
+            $expected = (int) ($order->tradeProposal?->expected_holding_hours ?? 0);
+            if ($expected > 0) $maxHoldHours = min($maxHoldHours, $expected);
+            $maxHoldHours = max(1, $maxHoldHours);
             $position = PaperPosition::create([
                 'trading_account_id' => $order->trading_account_id,
                 'paper_order_id' => $order->id,

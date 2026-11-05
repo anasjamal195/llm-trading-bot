@@ -94,6 +94,13 @@ class AgentRunJob implements ShouldQueue
                 ->orderBy('published_at', 'desc')->limit(20)->get()
                 ->map(fn ($n) => ['headline' => $n->headline, 'source' => $n->source, 'url' => $n->url, 'published_at' => $n->published_at?->toIso8601String(), 'currency' => $n->currency])->all();
         }
+        if ($task->task_type === 'coordinate' || $task->task_type === 'discover_pairs') {
+            $ctx['snapshots'] = \App\Models\MarketSnapshot::orderBy('id', 'desc')->limit(20)->get()->toArray();
+            $ctx['currencies'] = \App\Models\CurrencyResearch::orderBy('id', 'desc')->limit(10)->get()->toArray();
+            $ctx['rankings'] = \App\Models\PairRanking::orderBy('id', 'desc')->limit(10)->get()->toArray();
+            $ctx['open_positions'] = \App\Models\PaperPosition::where('status', 'OPEN')->get()->toArray();
+            $ctx['risk'] = ['kill_switch' => \App\Models\Setting::get('risk.kill_switch', ''), 'daily_pnl' => app(\App\Services\Risk\RiskManagementService::class)->dailyRealizedPnl(), 'consecutive_losses' => app(\App\Services\Risk\RiskManagementService::class)->consecutiveLosses()];
+        }
         if ($task->symbol) {
             $tf = app(\App\Services\MarketData\MarketDataService::class)->analysisTimeframe($task->symbol);
             $snap = \App\Models\MarketSnapshot::where('symbol', $task->symbol)->orderBy('id', 'desc')->first();
