@@ -47,18 +47,26 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // Gold (metal): 2-decimal quotes, 0.1 pips, 100oz contract.
-        // $1 move on 1 lot = $100 → tick_size 0.01 with tick_value 1.0.
-        \App\Models\TradingSymbol::firstOrCreate(['symbol' => 'XAUUSD'], [
-            'base_currency' => 'XAU', 'quote_currency' => 'USD',
+        // Gold quoted in JPY (this broker lists no XAUUSD/XAGUSD): 0-decimal
+        // quotes, 1 JPY tick = JPY 100 per lot at 100oz. P&L converted via USDJPY.
+        \App\Models\TradingSymbol::firstOrCreate(['symbol' => 'XAUJPY'], [
+            'base_currency' => 'XAU', 'quote_currency' => 'JPY',
             'is_enabled' => true, 'is_supported' => true,
+            'pip_size' => 100, 'spread_pips' => 1.2,
+            'contract_size' => 100, 'tick_size' => 1.0, 'tick_value' => 100.0,
+        ]);
+        // Not offered on this broker feed — keep placeholder rows disabled.
+        // (Kept for documentation; the init job also auto-disables anything
+        // the bridge stops listing.)
+        \App\Models\TradingSymbol::updateOrCreate(['symbol' => 'XAUUSD'], [
+            'base_currency' => 'XAU', 'quote_currency' => 'USD',
+            'is_enabled' => false, 'is_supported' => false,
             'pip_size' => 0.1, 'spread_pips' => 2.0,
             'contract_size' => 100, 'tick_size' => 0.01, 'tick_value' => 1.0,
         ]);
-        // Silver: 3-decimal quotes; $1 move on 1 lot (5000oz) = $5000.
-        \App\Models\TradingSymbol::firstOrCreate(['symbol' => 'XAGUSD'], [
+        \App\Models\TradingSymbol::updateOrCreate(['symbol' => 'XAGUSD'], [
             'base_currency' => 'XAG', 'quote_currency' => 'USD',
-            'is_enabled' => true, 'is_supported' => true,
+            'is_enabled' => false, 'is_supported' => false,
             'pip_size' => 0.01, 'spread_pips' => 3.0,
             'contract_size' => 5000, 'tick_size' => 0.001, 'tick_value' => 5.0,
         ]);

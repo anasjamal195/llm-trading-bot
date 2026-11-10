@@ -127,6 +127,18 @@ class RiskAndMarketTest extends TestCase
         $this->assertTrue($res['approved'], json_encode($res['reasons']));
     }
 
+    public function test_xaujpy_pnl_converts_through_usdjpy(): void
+    {
+        \App\Models\TradingSymbol::create(['symbol' => 'XAUJPY', 'base_currency' => 'XAU', 'quote_currency' => 'JPY', 'is_enabled' => true, 'pip_size' => 100, 'spread_pips' => 1.2, 'tick_size' => 1.0, 'tick_value' => 100.0, 'contract_size' => 100]);
+        \App\Models\Candle::create(['symbol' => 'USDJPY', 'timeframe' => 'M1', 'candle_time' => now()->subMinute(), 'open' => 154, 'high' => 154, 'low' => 154, 'close' => 154, 'source' => 'test']);
+        // BUY 638000 → 638500 (500 ticks × JPY100 × 0.01 lot = JPY500 → /154).
+        $this->assertEquals(3.25, app(\App\Services\PaperBroker\PaperBrokerService::class)->pnl('XAUJPY', 'BUY', 638000, 638500, 0.01));
+        // Risk sizing honours conversion: JPY2000 SL at $25 risk → 0.01 lots.
+        $this->assertEquals(0.01, app(RiskManagementService::class)->volumeForRisk(\App\Models\TradingSymbol::where('symbol', 'XAUJPY')->first(), 2000, 25.00));
+        // USD-quoted pairs are unaffected (rate 1.0).
+        $this->assertEquals(1.0, \App\Services\PaperBroker\PaperBrokerService::quoteToUsd('EURUSD'));
+    }
+
     public function test_agent_schema_validation(): void
     {
         $agent = app(\App\Agents\TradeDecisionAgent::class);

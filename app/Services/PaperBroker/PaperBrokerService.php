@@ -436,11 +436,39 @@ class PaperBrokerService
         $ts = TradingSymbol::where('symbol', $symbol)->first();
         $tickSize = $ts ? (float) $ts->tick_size : 0.00001;
         $tickValue = $ts ? (float) $ts->tick_value : 1.0;
-        // JPY-quoted pairs: tick_value is per-point in quote; simplified 1:1 USD conversion.
+        // Tick values are denominated in the quote currency — convert to USD.
+        $tickValue *= $this->quoteToUsd($symbol);
         if ($tickSize <= 0) return 0;
         $ticks = ($exit - $entry) / $tickSize;
         if ($direction === 'SELL') $ticks = -$ticks;
         return round($ticks * $tickValue * $volume, 2);
+    }
+
+    /**
+     * Quote-currency → USD rate, read live from the latest M1 candle of the
+     * conversion pair (e.g. XAUJPY uses USDJPY). Cached briefly per process.
+     * Falls back to 1.0 with a warning when no conversion pair is synced yet.
+     */
+    public static function quoteToUsd(string $symbol): float
+    {
+        static $cache = [];
+        $ts = TradingSymbol::where('symbol', $symbol)->first();
+        $quote = $ts?->quote_currency;
+        if (! $quote || $quote === 'USD') return 1.0;
+        if (isset($cache[$quote]) && $cache[$quote]['at'] > time() - 60) return $cache[$quote]['rate'];
+        $rate = 1.0;
+        foreach ([$quote . 'USD', 'USD' . $quote] as $i => $pair) {
+            $close = Candle::where('symbol', $pair)->where('timeframe', 'M1')->orderBy('candle_time', 'desc')->value('close');
+            if ($close && (float) $close > 0) {
+                $rate = $i === 0 ? (float) $close : 1.0 / (float) $close;
+                break;
+            }
+        }
+        if ($rate === 1.0) {
+            \Illuminate\Support\Facades\Log::warning('No FX conversion pair synced', ['symbol' => $symbol, 'quote' => $quote]);
+        }
+        $cache[$quote] = ['rate' => $rate, 'at' => time()];
+        return $rate;
     }
 
     private function executionCosts(?TradingSymbol $ts, float $volume): float

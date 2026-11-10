@@ -133,11 +133,12 @@ class RiskManagementService
         return str_ends_with($symbol, 'JPY') ? 0.01 : 0.0001;
     }
 
-    /** Lots such that sl distance * tick value ~= risk amount. */
+    /** Lots such that sl distance * tick value ~= risk amount (USD-converted). */
     public function volumeForRisk(TradingSymbol $ts, float $slDistance, float $riskAmount): float
     {
         $tickSize = (float) $ts->tick_size ?: 0.00001;
         $tickValue = (float) $ts->tick_value ?: 1.0;
+        $tickValue *= \App\Services\PaperBroker\PaperBrokerService::quoteToUsd($ts->symbol);
         if ($tickSize <= 0 || $slDistance <= 0) return 0;
         $ticks = $slDistance / $tickSize;
         $lossPerLot = $ticks * $tickValue;
@@ -150,6 +151,7 @@ class RiskManagementService
     {
         $tickSize = (float) $ts->tick_size ?: 0.00001;
         $tickValue = (float) $ts->tick_value ?: 1.0;
+        $tickValue *= \App\Services\PaperBroker\PaperBrokerService::quoteToUsd($ts->symbol);
         return round(($slDistance / $tickSize) * $tickValue * $volume, 2);
     }
 

@@ -38,14 +38,29 @@ class MarketInitializationJob implements ShouldQueue
             }
             // 2. Discover + reconcile symbols.
             try {
-                $list = $provider->symbols('', 500);
-                foreach ($list['symbols'] ?? [] as $sym) {
-                    if (! is_string($sym) || strlen($sym) !== 6) continue;
-                    TradingSymbol::firstOrCreate(['symbol' => strtoupper($sym)], [
-                        'base_currency' => substr(strtoupper($sym), 0, 3),
-                        'quote_currency' => substr(strtoupper($sym), 3, 3),
+                // High limit: reconciliation must see the FULL broker list,
+                // otherwise truncation would wrongly disable real symbols.
+                $list = $provider->symbols('', 12000);
+                $offered = array_map('strtoupper', array_filter($list['symbols'] ?? [], 'is_string'));
+                foreach ($offered as $sym) {
+                    if (strlen($sym) !== 6) continue;
+                    TradingSymbol::firstOrCreate(['symbol' => $sym], [
+                        'base_currency' => substr($sym, 0, 3),
+                        'quote_currency' => substr($sym, 3, 3),
                         'is_enabled' => false, 'is_supported' => true,
                     ]);
+                }
+                // Align with the feed: auto-disable anything the broker no longer lists
+                // (e.g. XAUUSD on servers that only quote XAUEUR/XAUJPY). Never touches
+                // rows lacking specs — only flips symbols the bridge stopped offering.
+                // Sanity guard: skip if the broker returned a suspiciously short list.
+                $dropped = collect();
+                if (count($offered) > 10) {
+                    $dropped = TradingSymbol::where('is_enabled', true)->whereNotIn('symbol', $offered)->get();
+                }
+                foreach ($dropped as $d) {
+                    $d->update(['is_enabled' => false, 'is_supported' => false]);
+                    \App\Models\SystemHealthLog::create(['component' => 'init', 'status' => 'WARNING', 'message' => "Symbol {$d->symbol} not offered by broker — disabled"]);
                 }
             } catch (\Throwable) { /* discovery best-effort */ }
 
