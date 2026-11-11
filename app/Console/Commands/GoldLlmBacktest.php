@@ -275,6 +275,7 @@ class GoldLlmBacktest extends Command
                     }
                     $gate = $this->askGate($llm, $symbol, $tf, $window, $c, $cand, $this->option('agent'), $llmOpts);
                     $llmCalls++;
+                    $evalLog[] = ['t' => $c['t'], 'close' => $c['c'], 'signal' => $gate + ['candidate' => $cand['dir']]];
                     if (($gate['verdict'] ?? 'REJECT') !== 'APPROVE' || ($gate['confidence'] ?? 0) < $minConf) {
                         $holds++;
                         $this->line(sprintf('[%s] GATE-REJECT %s conf=%.2f (%s) -> wait %d', $c['t'], $cand['dir'], $gate['confidence'] ?? 0, substr((string) ($gate['rationale'] ?? ''), 0, 90), $cooldown));
