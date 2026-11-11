@@ -52,7 +52,8 @@ class GoldLlmBacktest extends Command
         {--max-hold=72 : Max position hold in analysis candles}
         {--agent=backtest-gold : OpenRouter agent/model key}
         {--model= : Override the OpenRouter model (e.g. deepseek/deepseek-v3.2). Default: settings key}
-        {--decision=pick : Decision mode: pick (LLM picks direction+grid) or gate (rule proposes, LLM approves/rejects)}
+        {--decision=pick : Decision mode: pick (LLM picks) | gate (rule proposes, LLM approves) | mock (rule trades alone, no LLM calls)}
+        {--gate-score=60 : Gate mode: approve candidates scoring at/above this (0-100)}
         {--trend-filter=1 : Block signals against the window trend (1=on, 0=off)}
         {--breakeven-r=1.0 : Move SL to entry once profit hits NxR (0=off)}
         {--loss-brake=2 : Sit out after N consecutive losing trades (0=off)}
@@ -107,14 +108,16 @@ class GoldLlmBacktest extends Command
             return 1;
         }
 
-        $decision = strtolower((string) $this->option('decision')) === 'gate' ? 'gate' : 'pick';
+        $decision = strtolower((string) $this->option('decision'));
+        if (! in_array($decision, ['pick', 'gate', 'mock'], true)) $decision = 'pick';
         $modelOv = (string) ($this->option('model') ?: '');
         $llmOpts = $modelOv !== '' ? ['model' => $modelOv] : [];
         // Decision layer is always LLM-driven (pick: model chooses everything;
         // gate: deterministic rule proposes, model approves/rejects). No call cap:
         // every evaluation asks the model. Backstop is the OpenRouter daily
         // budget in settings (openrouter.daily_budget), enforced server-side.
-        if (! $llm->isConfigured()) {
+        // Decision layer is LLM-driven in pick/gate modes (mock needs no key).
+        if ($decision !== 'mock' && ! $llm->isConfigured()) {
             $this->error('OpenRouter API key is not configured (settings: openrouter.api_key). Cannot run without the LLM decision layer.');
             return 1;
         }
@@ -285,7 +288,25 @@ class GoldLlmBacktest extends Command
             // --- 3. Flat & no live batch: evaluate (or wait for cooldown). ---
             if ($pos === null && ! $orders && $i >= $nextEvalIdx) {
                 $window = array_slice($candles, $i - $lookbackN + 1, $lookbackN); // <= i only
-                if ($decision === 'gate') {
+                if ($decision === 'mock') {
+                    // Original deterministic rule trading alone: same EMA/RSI
+                    // proposer, auto-approved at fixed confidence. Zero LLM cost.
+                    $cand = null;
+                    if ($candTf !== '') {
+                        while ($candPtr < count($candCandles) && $candCandles[$candPtr]['t'] <= $c['t']) $candPtr++;
+                        $fast = array_column(array_slice($candCandles, max(0, $candPtr - $candLookbackN), $candLookbackN), 'c');
+                        if (count($fast) >= $candLookbackN) $cand = $this->proposeCandidate($window, $fast);
+                    } else {
+                        $cand = $this->proposeCandidate($window);
+                    }
+                    if ($cand === null) {
+                        $holds++;
+                        $nextEvalIdx = $i + $cooldown;
+                        continue;
+                    }
+                    $sig = ['action' => $cand['dir'], 'confidence' => 0.7, 'rationale' => 'mock: ' . $cand['why'],
+                        'entries' => $cand['entries'], 'sl_atr' => $cand['sl_atr'], 'tp_atr' => $cand['tp_atr']];
+                } elseif ($decision === 'gate') {
                     // Deterministic rule proposes; the LLM disposes (approve/reject
                     // with regime context). No candidate -> HOLD without spending a call.
                     $cand = null;
@@ -305,9 +326,11 @@ class GoldLlmBacktest extends Command
                     $gate = $this->askGate($llm, $symbol, $tf, $window, $c, $cand, $this->option('agent'), $llmOpts);
                     $llmCalls++;
                     $evalLog[] = ['t' => $c['t'], 'close' => $c['c'], 'signal' => $gate + ['candidate' => $cand['dir']]];
-                    if (($gate['verdict'] ?? 'REJECT') !== 'APPROVE' || ($gate['confidence'] ?? 0) < $minConf) {
+                    $gateScore = (float) ($gate['score'] ?? 0);
+                    $minScore = (float) $this->option('gate-score');
+                    if ($gateScore < $minScore || ($gate['confidence'] ?? 0) < $minConf) {
                         $holds++;
-                        $this->line(sprintf('[%s] GATE-REJECT %s conf=%.2f (%s) -> wait %d', $c['t'], $cand['dir'], $gate['confidence'] ?? 0, substr((string) ($gate['rationale'] ?? ''), 0, 90), $cooldown));
+                        $this->line(sprintf('[%s] GATE-REJECT %s score=%.0f conf=%.2f (%s) -> wait %d', $c['t'], $cand['dir'], $gateScore, $gate['confidence'] ?? 0, substr((string) ($gate['rationale'] ?? ''), 0, 90), $cooldown));
                         $nextEvalIdx = $i + $cooldown;
                         continue;
                     }
@@ -316,7 +339,7 @@ class GoldLlmBacktest extends Command
                         'rationale' => 'gate-approved: ' . ($gate['rationale'] ?? ''),
                         'entries' => $gate['entries'] ?? $cand['entries'], 'sl_atr' => $gate['sl_atr'] ?? $cand['sl_atr'],
                         'tp_atr' => $gate['tp_atr'] ?? $cand['tp_atr']];
-                    $this->line(sprintf('[%s] GATE-APPROVE %s conf=%.2f (%s)', $c['t'], $cand['dir'], $gate['confidence'], substr((string) ($gate['rationale'] ?? ''), 0, 90)));
+                    $this->line(sprintf('[%s] GATE-APPROVE %s score=%.0f conf=%.2f (%s)', $c['t'], $cand['dir'], $gateScore, $gate['confidence'] ?? 0, substr((string) ($gate['rationale'] ?? ''), 0, 90)));
                 } else {
                     $sig = $this->askLlm($llm, $symbol, $tf, $window, $c, $this->option('agent'), $llmOpts);
                     $llmCalls++;
@@ -536,17 +559,17 @@ class GoldLlmBacktest extends Command
             ],
             'task' => 'The rule proposes ' . $cand['dir'] . ' because "' . $cand['why'] . '". Veto it if: the move already exhausted into window high/low, ADX shows chop, session is dead (Asian/off-hours), or risk/reward to the nearest window extreme is poor. Otherwise APPROVE.',
         ];
-        $system = 'You are the risk gate for an XAUUSD intraday system. A deterministic rule proposes a trade; you APPROVE only setups you would take with real money, otherwise REJECT. '
-            . 'Reply with JSON ONLY: {"verdict":"APPROVE"|"REJECT","confidence":0.0-1.0,"rationale":"<40 words>"'
+        $system = 'You are the risk filter for an XAUUSD intraday system. A deterministic rule proposes trades often; your job is to SCORE each one 0-100 so only the strongest survive. '
+            . 'Score 85+: exceptional (trend + session + level + momentum all align). 70-84: solid, tradeable. 60-69: acceptable. Below 60: flawed — exhausted move, chop, dead session, or poor distance to the nearest window extreme. '
+            . 'Calibrate honestly across the full range; most candidates should land 35-75, not cluster at one number. '
+            . 'Reply with JSON ONLY: {"score":0-100,"confidence":0.0-1.0,"rationale":"<40 words>"'
             . ',"entries":[0.25,0.5,0.75],"sl_atr":1.5}. entries/sl_atr optional: include ONLY to override the candidate grid with a better one.';
         $res = $llm->chatJson($agent, $system, $facts, $llmOpts);
-        if (! ($res['ok'] ?? false) || ! isset($res['data']['verdict'])) {
-            return ['verdict' => 'REJECT', 'confidence' => 0.0, 'rationale' => 'llm-error: ' . substr((string) ($res['error'] ?? 'unknown'), 0, 120)];
+        if (! ($res['ok'] ?? false) || ! isset($res['data']['score'])) {
+            return ['score' => 0, 'confidence' => 0.0, 'rationale' => 'llm-error: ' . substr((string) ($res['error'] ?? 'unknown'), 0, 120)];
         }
         $d = $res['data'];
-        $v = strtoupper((string) ($d['verdict'] ?? 'REJECT'));
-        if (! in_array($v, ['APPROVE', 'REJECT'], true)) $v = 'REJECT';
-        return ['verdict' => $v, 'confidence' => (float) ($d['confidence'] ?? 0), 'rationale' => (string) ($d['rationale'] ?? ''),
+        return ['score' => max(0, min(100, (float) ($d['score'] ?? 0))), 'confidence' => (float) ($d['confidence'] ?? 0), 'rationale' => (string) ($d['rationale'] ?? ''),
             'entries' => $d['entries'] ?? null, 'sl_atr' => $d['sl_atr'] ?? null, 'tp_atr' => $d['tp_atr'] ?? null];
     }
 
