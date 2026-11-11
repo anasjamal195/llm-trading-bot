@@ -1,0 +1,18 @@
+LOCKED STRATEGY: v3.2 pure pick (slow, safe, consistent)
+Code: storage/logs/GoldLlmBacktest.v32-pick-locked.php @ git a3eb8d8
+Date locked: 2026-11-11T19:24:44Z
+
+CLI (validated config — do not change for production comparison):
+  bot:backtest-gold-llm --symbol=XAUUSD(GOLD proxy, corr 0.99996)
+    --timeframe=H1 --decision=pick --model=deepseek/deepseek-v3.2
+    --cooldown=6 --min-confidence=0.55 --exit-mode=trail --trail-atr=1.0
+    --sl-atr=1.5 --tp-atr=3.0 --risk-pct=1.0 --max-hold=72
+    --trend-filter=1 --breakeven-r=1.0 --loss-brake=2 --loss-cooldown=12
+    --spread-pips=2 --pip-size=0.1
+
+Validated stats (1% risk, costs in):
+  XAUUSD Oct5-31: 5 trades, 100% win, +$267 (+2.67%), DD 0.00%, exp +$53.49
+  GOLD Aug:       9 trades, 44% win, +$105 (+1.05%), DD -0.94%, exp +$11.65
+  GOLD Sep:      14 trades, 50% win, +$266 (+2.66%), DD -0.96%, exp +$19.00
+  GOLD Oct28-31:  3 trades, 67% win, +$116 (+1.16%), DD -0.27%, exp +$38.70
+  Aggregate pick: 31 trades, 58% win, +$754, worst monthly DD -0.96%
