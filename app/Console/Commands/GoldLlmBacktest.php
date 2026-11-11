@@ -59,6 +59,9 @@ class GoldLlmBacktest extends Command
         {--loss-brake=2 : Sit out after N consecutive losing trades (0=off)}
         {--loss-cooldown=12 : Candles to skip once the loss brake triggers}
         {--candidate-tf= : Faster TF proposing setups (e.g. M15); decisions stay on --timeframe. Default: same as --timeframe}
+        {--regime-tf= : Monthly switch TF (e.g. H4); trade a month only if trailing ADX clears --regime-adx. Empty=off}
+        {--regime-adx=25 : Monthly switch threshold (ADX over --regime-lookback-days)}
+        {--regime-lookback-days=30 : Trailing days feeding the monthly regime read}
         {--spread-pips= : Override spread (default: trading_symbols row or 0)}
         {--pip-size= : Override pip size (default: trading_symbols row or 0.1)}
         {--report= : Write JSON report to this path (default storage/logs/)}
@@ -160,6 +163,22 @@ class GoldLlmBacktest extends Command
         $candTf = strtoupper((string) ($this->option('candidate-tf') ?: ''));
         if ($candTf === $tf) $candTf = '';
         $candCandles = []; $candLookbackN = 0; $candPtr = 0;
+        // Monthly regime switch: trade a calendar month only if the trailing
+        // regime-TF ADX (closed candles, strictly before the month) clears the
+        // threshold. Sit-out months: pending batches cancelled, open positions
+        // still managed to their natural exit, no new evaluations.
+        $regimeTf = strtoupper((string) ($this->option('regime-tf') ?: ''));
+        $regimeAdx = (float) $this->option('regime-adx');
+        $regimeLbDays = max(5, (int) $this->option('regime-lookback-days'));
+        $regCandles = [];
+        if ($regimeTf !== '') {
+            $regCandles = Candle::where('symbol', $symbol)->where('timeframe', $regimeTf)
+                ->where('candle_time', '<=', $to . ' 23:59:59')
+                ->orderBy('candle_time')->get()
+                ->map(fn ($c) => ['t' => (string) $c->candle_time, 'h' => (float) $c->high, 'l' => (float) $c->low, 'c' => (float) $c->close])->all();
+            if (count($regCandles) < 60) { $this->error("Not enough {$symbol} {$regimeTf} candles for regime reads."); return 1; }
+        }
+        $regimeLog = []; $curMonth = null; $tradeMonth = true;
         if ($candTf !== '') {
             $candMin = ['M1' => 1, 'M5' => 5, 'M15' => 15, 'M30' => 30, 'H1' => 60, 'H4' => 240, 'D1' => 1440][$candTf] ?? 0;
             if ($candMin <= 0) { $this->error("Unsupported --candidate-tf={$candTf}."); return 1; }
@@ -187,6 +206,28 @@ class GoldLlmBacktest extends Command
 
         for ($i = $startIdx; $i < count($candles); $i++) {
             $c = $candles[$i]; // JUST-CLOSED candle: only legal information source.
+
+            // Monthly regime switch: decided once, on the month's first candle,
+            // from trailing regime-TF closes strictly BEFORE this month.
+            if ($regimeTf !== '') {
+                $m = substr($c['t'], 0, 7);
+                if ($m !== $curMonth) {
+                    $curMonth = $m;
+                    $cutoff = $m . '-01 00:00:00';
+                    $past = array_values(array_filter($regCandles, fn ($r) => $r['t'] < $cutoff));
+                    $winDays = array_slice($past, -$regimeLbDays * 6); // ~6 H4 candles/day
+                    $adx = count($winDays) >= 40
+                        ? $this->ta->adx(array_column($winDays, 'h'), array_column($winDays, 'l'), array_column($winDays, 'c'))
+                        : null;
+                    $tradeMonth = $adx !== null && $adx >= $regimeAdx;
+                    $regimeLog[] = ['month' => $m, 'adx' => $adx, 'trade' => $tradeMonth];
+                    $this->line(sprintf('[%s] REGIME %s H4-ADX(30d)=%s -> %s', $c['t'], $m, $adx ?? 'n/a', $tradeMonth ? 'TRADE' : 'SIT OUT'));
+                    if (! $tradeMonth && $orders) {
+                        $this->line(sprintf('[%s] REGIME cancelled %d pending order(s) (sit-out month)', $c['t'], count($orders)));
+                        $orders = [];
+                    }
+                }
+            }
 
             // --- 1. Manage open position on closed candle (SL wins ties). ---
             if ($pos !== null) {
@@ -286,7 +327,9 @@ class GoldLlmBacktest extends Command
             }
 
             // --- 3. Flat & no live batch: evaluate (or wait for cooldown). ---
-            if ($pos === null && ! $orders && $i >= $nextEvalIdx) {
+            // Regime sit-out months skip evaluation entirely (open positions
+            // are still managed above; pending batches were cancelled).
+            if ($pos === null && ! $orders && $i >= $nextEvalIdx && $tradeMonth) {
                 $window = array_slice($candles, $i - $lookbackN + 1, $lookbackN); // <= i only
                 if ($decision === 'mock') {
                     // Original deterministic rule trading alone: same EMA/RSI
@@ -465,7 +508,8 @@ class GoldLlmBacktest extends Command
             'max_drawdown_pct' => round($mdd, 3),
             'expectancy' => $n ? round($net / $n, 2) : 0,
             'evaluations' => count($evalLog), 'holds' => $holds, 'llm_calls' => $llmCalls,
-            'filtered' => $filtered, 'brakes' => $brakes, 'gross' => round($grossTot, 2), 'costs' => round($costTot, 2),
+            'filtered' => $filtered, 'brakes' => $brakes, 'regime_log' => $regimeLog,
+            'gross' => round($grossTot, 2), 'costs' => round($costTot, 2),
             'eval_log' => $evalLog,
             'trade_list' => $trades,
         ];
