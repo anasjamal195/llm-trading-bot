@@ -57,6 +57,7 @@ class GoldLlmBacktest extends Command
         {--breakeven-r=1.0 : Move SL to entry once profit hits NxR (0=off)}
         {--loss-brake=2 : Sit out after N consecutive losing trades (0=off)}
         {--loss-cooldown=12 : Candles to skip once the loss brake triggers}
+        {--candidate-tf= : Faster TF proposing setups (e.g. M15); decisions stay on --timeframe. Default: same as --timeframe}
         {--spread-pips= : Override spread (default: trading_symbols row or 0)}
         {--pip-size= : Override pip size (default: trading_symbols row or 0.1)}
         {--report= : Write JSON report to this path (default storage/logs/)}
@@ -150,6 +151,22 @@ class GoldLlmBacktest extends Command
         $exitMode = strtolower((string) $this->option('exit-mode')) === 'fixed' ? 'fixed' : 'trail';
         $trailAtr = max(0.0, (float) $this->option('trail-atr'));
         if ($exitMode === 'trail' && $trailAtr <= 0) $exitMode = 'fixed'; // trail needs a distance
+
+        // Multi-TF candidate flow: a faster TF proposes setups, decisions
+        // (entries, SL/TP, exits) stay on the analysis TF. Null = same TF.
+        $candTf = strtoupper((string) ($this->option('candidate-tf') ?: ''));
+        if ($candTf === $tf) $candTf = '';
+        $candCandles = []; $candLookbackN = 0; $candPtr = 0;
+        if ($candTf !== '') {
+            $candMin = ['M1' => 1, 'M5' => 5, 'M15' => 15, 'M30' => 30, 'H1' => 60, 'H4' => 240, 'D1' => 1440][$candTf] ?? 0;
+            if ($candMin <= 0) { $this->error("Unsupported --candidate-tf={$candTf}."); return 1; }
+            $candLookbackN = (int) round($lookbackDays * 24 * 60 / $candMin);
+            $candCandles = Candle::where('symbol', $symbol)->where('timeframe', $candTf)
+                ->where('candle_time', '<=', $to . ' 23:59:59')
+                ->orderBy('candle_time')->get()
+                ->map(fn ($c) => ['t' => (string) $c->candle_time, 'c' => (float) $c->close])->all();
+            if (count($candCandles) < $candLookbackN) { $this->error("Not enough {$symbol} {$candTf} candles for {$lookbackDays}d candidate lookback."); return 1; }
+        }
 
         $this->info("GOLD LLM BACKTEST {$symbol} {$tf} | range {$from}..{$to} | lookback {$lookbackDays}d (~{$lookbackN} candles) | warmup from {$warmupFrom}");
         $modelName = $modelOv !== '' ? $modelOv : $llm->modelFor((string) $this->option('agent'));
@@ -271,7 +288,15 @@ class GoldLlmBacktest extends Command
                 if ($decision === 'gate') {
                     // Deterministic rule proposes; the LLM disposes (approve/reject
                     // with regime context). No candidate -> HOLD without spending a call.
-                    $cand = $this->proposeCandidate($window);
+                    $cand = null;
+                    if ($candTf !== '') {
+                        // Advance pointer over faster-TF closes at/before this decision candle.
+                        while ($candPtr < count($candCandles) && $candCandles[$candPtr]['t'] <= $c['t']) $candPtr++;
+                        $fast = array_column(array_slice($candCandles, max(0, $candPtr - $candLookbackN), $candLookbackN), 'c');
+                        if (count($fast) >= $candLookbackN) $cand = $this->proposeCandidate($window, $fast);
+                    } else {
+                        $cand = $this->proposeCandidate($window);
+                    }
                     if ($cand === null) {
                         $holds++;
                         $nextEvalIdx = $i + $cooldown;
@@ -471,10 +496,12 @@ class GoldLlmBacktest extends Command
      * Deterministic candidate proposer for gate mode. Same EMA/RSI logic the
      * old mock used — but here it only PROPOSES. The LLM approves or rejects.
      * Returns null when there is no setup (no LLM call is spent).
+     * With --candidate-tf, the rule runs on the faster TF (closes at/before
+     * the decision candle — no lookahead); otherwise on the analysis window.
      */
-    private function proposeCandidate(array $window): ?array
+    private function proposeCandidate(array $window, ?array $fastCloses = null): ?array
     {
-        $closes = array_column($window, 'c');
+        $closes = $fastCloses ?? array_column($window, 'c');
         $rsi = $this->ta->rsi($closes, 14);
         $emaF = $this->ta->ema($closes, 12);
         $emaS = $this->ta->ema($closes, 26);
