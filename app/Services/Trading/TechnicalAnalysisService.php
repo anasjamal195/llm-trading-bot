@@ -85,4 +85,36 @@ class TechnicalAnalysisService
         if ($ratio < 2.5) return 'RANGING';
         return 'VOLATILE';
     }
+
+    /** Wilder ADX(14) trend-strength 0-100. Needs highs/lows/closes of the window. Null when too short. */
+    public function adx(array $highs, array $lows, array $closes, int $period = 14): ?float
+    {
+        $n = count($closes);
+        if ($n < $period * 2 + 1) return null;
+        $plusDM = $minusDM = $tr = [];
+        for ($i = 1; $i < $n; $i++) {
+            $up = $highs[$i] - $highs[$i - 1];
+            $dn = $lows[$i - 1] - $lows[$i];
+            $plusDM[] = ($up > $dn && $up > 0) ? $up : 0.0;
+            $minusDM[] = ($dn > $up && $dn > 0) ? $dn : 0.0;
+            $tr[] = max($highs[$i] - $lows[$i], abs($highs[$i] - $closes[$i - 1]), abs($lows[$i] - $closes[$i - 1]));
+        }
+        // Wilder smoothing seeded on first $period values.
+        $sPlus = array_sum(array_slice($plusDM, 0, $period));
+        $sMinus = array_sum(array_slice($minusDM, 0, $period));
+        $sTR = array_sum(array_slice($tr, 0, $period));
+        $dxs = [];
+        $m = count($plusDM);
+        for ($i = $period; $i < $m; $i++) {
+            $sPlus = $sPlus - $sPlus / $period + $plusDM[$i];
+            $sMinus = $sMinus - $sMinus / $period + $minusDM[$i];
+            $sTR = $sTR - $sTR / $period + $tr[$i];
+            if ($sTR <= 0) continue;
+            $pdi = 100 * $sPlus / $sTR;
+            $mdi = 100 * $sMinus / $sTR;
+            $dxs[] = ($pdi + $mdi) > 0 ? 100 * abs($pdi - $mdi) / ($pdi + $mdi) : 0.0;
+        }
+        if (count($dxs) < $period) return null;
+        return round(array_sum(array_slice($dxs, -$period)) / $period, 2);
+    }
 }
