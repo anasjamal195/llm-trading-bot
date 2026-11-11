@@ -55,6 +55,8 @@ class GoldLlmBacktest extends Command
         {--decision=pick : Decision mode: pick (LLM picks direction+grid) or gate (rule proposes, LLM approves/rejects)}
         {--trend-filter=1 : Block signals against the window trend (1=on, 0=off)}
         {--breakeven-r=1.0 : Move SL to entry once profit hits NxR (0=off)}
+        {--loss-brake=2 : Sit out after N consecutive losing trades (0=off)}
+        {--loss-cooldown=12 : Candles to skip once the loss brake triggers}
         {--spread-pips= : Override spread (default: trading_symbols row or 0)}
         {--pip-size= : Override pip size (default: trading_symbols row or 0.1)}
         {--report= : Write JSON report to this path (default storage/logs/)}
@@ -157,7 +159,9 @@ class GoldLlmBacktest extends Command
         $orders = [];       // pending batch: [['dir','entry','sl','tp','vol','placed_idx','expires_idx']]
         $pos = null;        // open position
         $nextEvalIdx = $startIdx;
-        $llmCalls = 0; $holds = 0; $filtered = 0;
+        $llmCalls = 0; $holds = 0; $filtered = 0; $brakes = 0; $consecLoss = 0;
+        $lossBrake = max(0, (int) $this->option('loss-brake'));
+        $lossCooldown = max(0, (int) $this->option('loss-cooldown'));
         $trades = [];
         $evalLog = [];
 
@@ -189,7 +193,7 @@ class GoldLlmBacktest extends Command
                         $c['t'], $pos['dir'], $symbol, $pos['entry'], $exit, $gross, $costs, $p, $pct, $reason, $held, $equity
                     ));
                     $pos = null;
-                    $nextEvalIdx = $i + 1; // re-evaluate from NEXT closed candle
+                    $nextEvalIdx = $this->registerClose($p, $i, $lossBrake, $lossCooldown, $consecLoss, $brakes);
                     continue; // never open new risk on the same candle that closed a trade
                 }
 
@@ -241,7 +245,7 @@ class GoldLlmBacktest extends Command
                         $equity += $p;
                         $trades[] = [...$f, 'fill_t' => $c['t'], 'fill_idx' => $i, 'exit' => $f['sl'], 'reason' => 'STOP_LOSS_FILL', 'exit_t' => $c['t'], 'pnl' => $p, 'pct' => round($pct, 4), 'costs' => $costs, 'gross' => round($gross, 2)];
                         $this->line(sprintf('[%s] FILL+STOP %s %s @ %.2f -> SL %.2f same candle, pnl=%+.2f (cancelled %d sibling(s))', $c['t'], $f['dir'], $symbol, $f['entry'], $f['sl'], $p, $cancelled));
-                        $nextEvalIdx = $i + 1;
+                        $nextEvalIdx = $this->registerClose($p, $i, $lossBrake, $lossCooldown, $consecLoss, $brakes);
                         continue;
                     }
                     $pos = [...$f, 'fill_t' => $c['t'], 'fill_idx' => $i];
@@ -400,7 +404,7 @@ class GoldLlmBacktest extends Command
             sprintf('Net P&L          : %+.2f ( %+.2f%% of start %.2f )  [gross %+.2f - costs %.2f]', $net, $netPct, $balance, $grossTot, $costTot),
             sprintf('Final equity     : %.2f   Max DD: %.2f%%', $equity, $mdd),
             sprintf('Avg win / loss   : %+.2f / %+.2f   Expectancy/trade: %+.2f', $avgWin, $avgLoss, $n ? $net / $n : 0),
-            "Evals / HOLDs / FILTERED: " . count($evalLog) . " / {$holds} / {$filtered}   LLM calls: {$llmCalls}",
+            "Evals / HOLDs / FILTERED / BRAKES: " . count($evalLog) . " / {$holds} / {$filtered} / {$brakes}   LLM calls: {$llmCalls}",
         ] as $row) $this->line($row);
 
         $report = [
@@ -413,7 +417,7 @@ class GoldLlmBacktest extends Command
             'max_drawdown_pct' => round($mdd, 3),
             'expectancy' => $n ? round($net / $n, 2) : 0,
             'evaluations' => count($evalLog), 'holds' => $holds, 'llm_calls' => $llmCalls,
-            'filtered' => $filtered, 'gross' => round($grossTot, 2), 'costs' => round($costTot, 2),
+            'filtered' => $filtered, 'brakes' => $brakes, 'gross' => round($grossTot, 2), 'costs' => round($costTot, 2),
             'eval_log' => $evalLog,
             'trade_list' => $trades,
         ];
@@ -578,6 +582,22 @@ class GoldLlmBacktest extends Command
         return max($lo, min($hi, $v));
     }
 
+    /**
+     * Loss-streak brake: a losing close increments the streak, a winner resets
+     * it. At $lossBrake consecutive losses the next evaluation is pushed out
+     * $lossCooldown candles and the streak resets. Returns next eval index.
+     */
+    private function registerClose(float $pnl, int $i, int $lossBrake, int $lossCooldown, int &$consecLoss, int &$brakes): int
+    {
+        if ($pnl <= 0) { $consecLoss++; } else { $consecLoss = 0; }
+        if ($lossBrake > 0 && $consecLoss >= $lossBrake) {
+            $brakes++;
+            $consecLoss = 0;
+            return $i + max(1, $lossCooldown);
+        }
+        return $i + 1;
+    }
+
     private function avg(array $v): float
     {
         $v = array_values($v);
@@ -597,9 +617,9 @@ class GoldLlmBacktest extends Command
         $L[] = sprintf('Final equity  : %12.2f', $equity);
         $L[] = sprintf('Net P&L       : %+12.2f  (%+.3f%% of start)   [gross %+.2f - costs %.2f]',
             $net, $netPct, $r['gross'] ?? 0, $r['costs'] ?? 0);
-        $L[] = sprintf('Trades/Wins   : %d / %d  (win rate %.1f%%)   Max DD %.2f%%   Expectancy %+.2f   Evals %d / Holds %d / Filtered %d',
+        $L[] = sprintf('Trades/Wins   : %d / %d  (win rate %.1f%%)   Max DD %.2f%%   Expectancy %+.2f   Evals %d / Holds %d / Filtered %d / Brakes %d',
             $n, $wins, $n ? $wins / $n * 100 : 0, $mdd, $n ? $net / $n : 0,
-            $r['evaluations'], $r['holds'], $r['filtered'] ?? 0);
+            $r['evaluations'], $r['holds'], $r['filtered'] ?? 0, $r['brakes'] ?? 0);
         $L[] = str_repeat('-', 108);
         $L[] = sprintf('%-4s %-16s %-4s %9s %9s %6s %9s %9s %9s %8s %-19s %-19s %s',
             '#', 'FILL_TIME', 'DIR', 'ENTRY', 'EXIT', 'VOL', 'GROSS', 'COSTS', 'NET_PNL', 'NET_%', 'SL', 'TP', 'REASON / EXIT_TIME');
