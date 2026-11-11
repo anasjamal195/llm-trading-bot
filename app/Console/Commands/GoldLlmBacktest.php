@@ -65,7 +65,8 @@ class GoldLlmBacktest extends Command
         {--spread-pips= : Override spread (default: trading_symbols row or 0)}
         {--pip-size= : Override pip size (default: trading_symbols row or 0.1)}
         {--report= : Write JSON report to this path (default storage/logs/)}
-        {--txt-report= : Write human-readable trade-wise TXT report (default alongside JSON)}';
+        {--txt-report= : Write human-readable trade-wise TXT report (default alongside JSON)}
+        {--name= : Strategy run name saved to DB + shown in admin (default auto)}';
 
     protected $description = 'Backtest LLM batch-limit gold strategy with no lookahead (closed-candle triggers only)';
 
@@ -520,6 +521,30 @@ class GoldLlmBacktest extends Command
         $txtPath = (string) ($this->option('txt-report') ?: preg_replace('/\.json$/', '.txt', $path));
         @file_put_contents($txtPath, $this->txtReport($report, $symbol, $tf, $from, $to, $balance, $equity, $net, $netPct, $n, $wins, $mdd));
         $this->info("TXT trade report -> {$txtPath}");
+
+        // Persist to DB so the admin GOLD Backtest page can list + chart it.
+        $runName = (string) ($this->option('name') ?: ('gold-llm-' . strtolower($symbol) . '-' . strtolower($tf) . '-' . date('Ymd-His')));
+        try {
+            $dbRun = \App\Models\BacktestRun::create([
+                'strategy_code' => $runName, 'symbol' => $symbol, 'timeframe' => $tf,
+                'from' => $from . ' 00:00:00', 'to' => $to . ' 23:59:59',
+                'parameters' => array_merge($this->options(), ['starting_balance' => $balance]),
+                'status' => 'COMPLETED', 'results' => $report,
+            ]);
+            foreach ($trades as $t) {
+                \App\Models\BacktestTrade::create([
+                    'backtest_run_id' => $dbRun->id, 'direction' => $t['dir'],
+                    'entry' => $t['entry'], 'exit' => $t['exit'], 'pnl' => $t['pnl'],
+                    'opened_at' => $t['fill_t'], 'closed_at' => $t['exit_t'],
+                    'stop_loss' => $t['sl'] ?? null, 'take_profit' => $t['tp'] ?? null,
+                    'volume' => $t['vol'] ?? null, 'costs' => $t['costs'] ?? 0,
+                    'close_reason' => $t['reason'] ?? null, 'rationale' => $t['why'] ?? null,
+                ]);
+            }
+            $this->info("Saved to DB as '{$runName}' (run #{$dbRun->id}, " . count($trades) . ' trades)');
+        } catch (\Throwable $e) {
+            $this->error('DB persist failed: ' . $e->getMessage());
+        }
 
         return 0;
     }

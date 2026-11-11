@@ -38,6 +38,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('learning', [TradingController::class, 'learning'])->name('learning');
         Route::get('backtests', [TradingController::class, 'backtests'])->name('backtests');
         Route::post('backtests', [TradingController::class, 'runBacktest'])->name('backtests.run');
+        Route::get('backtest/gold', [\App\Http\Controllers\Admin\GoldBacktestController::class, 'index'])->name('gold.index');
+        Route::get('backtest/gold/{run}', [\App\Http\Controllers\Admin\GoldBacktestController::class, 'show'])->name('gold.show');
+        Route::get('api/backtest/gold/{run}/candles', [\App\Http\Controllers\Admin\GoldBacktestController::class, 'candles'])->name('gold.candles');
 
         Route::get('settings', [SystemController::class, 'settings'])->name('settings');
         Route::post('settings', [SystemController::class, 'saveSettings'])->name('settings.save');
