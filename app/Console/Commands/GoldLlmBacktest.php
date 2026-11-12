@@ -534,7 +534,7 @@ class GoldLlmBacktest extends Command
             foreach ($trades as $t) {
                 \App\Models\BacktestTrade::create([
                     'backtest_run_id' => $dbRun->id, 'direction' => $t['dir'],
-                    'entry' => $t['entry'], 'exit' => $t['exit'], 'pnl' => $t['pnl'],
+                    'entry' => $t['entry'], 'exit' => $t['exit'], 'pnl' => $t['pnl'], 'pnl_pct' => $t['pct'] ?? null,
                     'opened_at' => $t['fill_t'], 'closed_at' => $t['exit_t'],
                     'stop_loss' => $t['sl'] ?? null, 'take_profit' => $t['tp'] ?? null,
                     'volume' => $t['vol'] ?? null, 'costs' => $t['costs'] ?? 0,
