@@ -43,12 +43,12 @@
 <div class="rounded-lg border dark:border-slate-800 overflow-hidden mb-2">
 <button class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60" onclick="document.getElementById('detail-{{ $t->id }}').classList.toggle('hidden')">
 <span class="text-[11px] text-slate-400 w-8 shrink-0">#{{ $k + 1 }}</span>
-<span class="text-[11px] px-2 py-0.5 rounded font-bold shrink-0 {{ $win ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' }}">{{ $win ? 'WIN' : 'LOSS' }}</span>
+<span class="text-[11px] px-2 py-0.5 rounded font-bold shrink-0" style="{{ $win ? 'background:#dcfce7;color:#166534;' : 'background:#fee2e2;color:#991b1b;' }}">{{ $win ? 'WIN' : 'LOSS' }}</span>
 <span class="text-[11px] px-2 py-0.5 rounded font-semibold shrink-0 {{ $t->direction === 'BUY' ? 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200' : 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' }}">{{ $t->direction }}</span>
 <span class="text-xs text-slate-600 dark:text-slate-300 min-w-0">opened <b>{{ $when($t->opened_at) }}</b> <span class="text-slate-400">· held {{ $dur($t->opened_at, $t->closed_at) }}</span></span>
 <span class="flex-1"></span>
 <span class="font-mono text-xs text-slate-500 shrink-0">{{ number_format($t->entry, 2) }} → {{ number_format($t->exit, 2) }}</span>
-<span class="font-mono text-base font-extrabold w-28 text-center shrink-0 px-2 py-1 rounded-lg {{ $win ? 'text-green-700 bg-green-100 dark:bg-green-900 dark:text-green-200' : 'text-red-700 bg-red-100 dark:bg-red-900 dark:text-red-200' }}">{{ $t->pnl_pct !== null ? sprintf('%+.2f%%', $t->pnl_pct) : '–' }}</span>
+<span class="font-mono text-base font-extrabold w-28 text-center shrink-0 px-2 py-1 rounded-lg" style="{{ $win ? 'background:#dcfce7;color:#166534;' : 'background:#fee2e2;color:#991b1b;' }}">{{ $t->pnl_pct !== null ? sprintf('%+.2f%%', $t->pnl_pct) : '–' }}</span>
 <span class="shrink-0"><span class="inline-block text-[11px] rounded border px-2 py-1 text-blue-600" onclick="event.stopPropagation();showTrade({{ $t->id }})">Show ⌖</span></span>
 </button>
 <div id="detail-{{ $t->id }}" class="hidden px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800/50 border-t dark:border-slate-800 grid sm:grid-cols-2 gap-x-6 gap-y-1">
