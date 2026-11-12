@@ -4,6 +4,7 @@
 @php
   $res = $run->results ?? [];
   $net = $res['net'] ?? null;
+  $up = ($net ?? 0) >= 0;
   $dur = function ($a, $b) {
     $s = max(0, strtotime($b) - strtotime($a));
     $h = intdiv($s, 3600); $m = intdiv($s % 3600, 60);
@@ -11,19 +12,28 @@
   };
   $when = fn ($t) => \Carbon\Carbon::parse($t)->format('M d, h:i A');
 @endphp
-<div class="rounded-lg border bg-white dark:bg-slate-900 dark:border-slate-800 p-4 mb-3">
+<div class="rounded-xl border mb-3 overflow-hidden {{ $up ? 'border-green-200 dark:border-green-900' : 'border-red-200 dark:border-red-900' }}">
+<div class="px-4 py-4 {{ $up ? 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950' : 'bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950 dark:to-rose-950' }}">
 <a href="{{ route('admin.gold.index') }}" class="text-blue-600 hover:underline text-xs">← All strategies</a>
-<div class="flex flex-wrap items-baseline gap-x-3 mt-1">
-<h1 class="font-mono font-bold text-base">{{ $run->strategy_code }}</h1>
-<span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800">{{ $run->symbol }} · {{ $run->timeframe }}</span>
-<span class="text-xs text-slate-500">{{ \Carbon\Carbon::parse($run->from)->format('M d, Y') }} → {{ \Carbon\Carbon::parse($run->to)->format('M d, Y') }} · ran {{ $run->created_at->diffForHumans() }} · all times UTC</span>
+<div class="flex flex-wrap items-end gap-x-4 gap-y-1 mt-1">
+<div class="min-w-0">
+<h1 class="font-mono font-bold text-base truncate">{{ $run->strategy_code }}</h1>
+<div class="text-xs text-slate-500 mt-0.5"><span class="px-1.5 py-0.5 rounded bg-white/70 dark:bg-black/30">{{ $run->symbol }} · {{ $run->timeframe }}</span> {{ \Carbon\Carbon::parse($run->from)->format('M d, Y') }} → {{ \Carbon\Carbon::parse($run->to)->format('M d, Y') }} · ran {{ $run->created_at->diffForHumans() }} · UTC</div>
 </div>
-<div class="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-3 text-center">
-<div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2 py-2"><div class="text-[11px] text-slate-500">TRADES / WINS</div><div class="font-bold">{{ $res['trades'] ?? $trades->count() }} / {{ $res['wins'] ?? '–' }}</div><div class="text-[11px] text-slate-500">{{ $res['win_rate_pct'] ?? '–' }}% win</div></div>
-<div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2 py-2"><div class="text-[11px] text-slate-500">NET P&L</div><div class="font-bold {{ ($net ?? 0) >= 0 ? 'text-green-600' : 'text-red-600' }}">{{ $net !== null ? sprintf('%+.2f', $net) : '–' }}</div><div class="text-[11px] {{ ($res['net_pct'] ?? 0) >= 0 ? 'text-green-600' : 'text-red-600' }}">{{ isset($res['net_pct']) ? sprintf('%+.2f%% of start', $res['net_pct']) : '' }}</div></div>
-<div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2 py-2"><div class="text-[11px] text-slate-500">MAX DRAWDOWN</div><div class="font-bold text-red-600">{{ isset($res['max_drawdown_pct']) ? sprintf('%.2f%%', $res['max_drawdown_pct']) : '–' }}</div><div class="text-[11px] text-slate-500">peak → trough</div></div>
-<div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2 py-2"><div class="text-[11px] text-slate-500">EXPECTANCY</div><div class="font-bold">{{ isset($res['expectancy']) ? sprintf('%+.2f / trade', $res['expectancy']) : '–' }}</div><div class="text-[11px] text-slate-500">costs {{ $res['costs'] ?? '–' }}</div></div>
-<div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2 py-2"><div class="text-[11px] text-slate-500">EVALS</div><div class="font-bold">{{ $res['evaluations'] ?? '–' }}</div><div class="text-[11px] text-slate-500">holds {{ $res['holds'] ?? '–' }} · brakes {{ $res['brakes'] ?? 0 }}</div></div>
+<span class="flex-1"></span>
+<div class="text-right shrink-0">
+<div class="text-[11px] font-semibold tracking-wider {{ $up ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300' }}">TOTAL RETURN</div>
+<div class="font-mono font-extrabold text-3xl {{ $up ? 'text-green-600' : 'text-red-600' }}">{{ isset($res['net_pct']) ? sprintf('%+.2f%%', $res['net_pct']) : '–' }}</div>
+<div class="font-mono text-xs {{ $up ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300' }}">{{ $net !== null ? sprintf('%+.2f of %.0f start', $net, $res['starting_balance'] ?? 10000) : '' }}</div>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-2 sm:grid-cols-5 gap-px bg-slate-100 dark:bg-slate-800 text-center">
+<div class="bg-white dark:bg-slate-900 px-2 py-2.5"><div class="text-[11px] text-slate-500">TRADES / WINS</div><div class="font-bold text-base">{{ $res['trades'] ?? $trades->count() }} / {{ $res['wins'] ?? '–' }}</div><div class="text-[11px] font-semibold {{ ($res['win_rate_pct'] ?? 0) >= 50 ? 'text-green-600' : 'text-amber-600' }}">{{ $res['win_rate_pct'] ?? '–' }}% win</div></div>
+<div class="bg-white dark:bg-slate-900 px-2 py-2.5"><div class="text-[11px] text-slate-500">MAX DRAWDOWN</div><div class="font-bold text-base text-red-600">{{ isset($res['max_drawdown_pct']) ? sprintf('%.2f%%', $res['max_drawdown_pct']) : '–' }}</div><div class="text-[11px] text-slate-500">peak → trough</div></div>
+<div class="bg-white dark:bg-slate-900 px-2 py-2.5"><div class="text-[11px] text-slate-500">EXPECTANCY</div><div class="font-bold text-base {{ ($res['expectancy'] ?? 0) >= 0 ? 'text-green-600' : 'text-red-600' }}">{{ isset($res['expectancy']) ? sprintf('%+.2f', $res['expectancy']) : '–' }}</div><div class="text-[11px] text-slate-500">per trade · costs {{ $res['costs'] ?? '–' }}</div></div>
+<div class="bg-white dark:bg-slate-900 px-2 py-2.5"><div class="text-[11px] text-slate-500">EVALS</div><div class="font-bold text-base">{{ $res['evaluations'] ?? '–' }}</div><div class="text-[11px] text-slate-500">holds {{ $res['holds'] ?? '–' }} · brakes {{ $res['brakes'] ?? 0 }}</div></div>
+<div class="bg-white dark:bg-slate-900 px-2 py-2.5"><div class="text-[11px] text-slate-500">FINAL EQUITY</div><div class="font-bold text-base">{{ isset($res['final_equity']) ? number_format($res['final_equity'], 2) : '–' }}</div><div class="text-[11px] text-slate-500">mode {{ $res['mode'] ?? '–' }}</div></div>
 </div>
 </div>
 
@@ -52,7 +62,7 @@
 <span class="text-xs text-slate-600 dark:text-slate-300 min-w-0">opened <b>{{ $when($t->opened_at) }}</b> <span class="text-slate-400">· held {{ $dur($t->opened_at, $t->closed_at) }}</span></span>
 <span class="flex-1"></span>
 <span class="font-mono text-xs text-slate-500 shrink-0">{{ number_format($t->entry, 2) }} → {{ number_format($t->exit, 2) }}</span>
-<span class="font-mono text-base font-extrabold w-24 text-right shrink-0 {{ $win ? 'text-green-600' : 'text-red-600' }}">{{ $t->pnl_pct !== null ? sprintf('%+.2f%%', $t->pnl_pct) : '–' }}</span>
+<span class="font-mono text-base font-extrabold w-28 text-center shrink-0 px-2 py-1 rounded-lg {{ $win ? 'text-green-700 bg-green-100 dark:bg-green-900 dark:text-green-200' : 'text-red-700 bg-red-100 dark:bg-red-900 dark:text-red-200' }}">{{ $t->pnl_pct !== null ? sprintf('%+.2f%%', $t->pnl_pct) : '–' }}</span>
 <span class="shrink-0"><span class="inline-block text-[11px] rounded border px-2 py-1 text-blue-600" onclick="event.stopPropagation();showTrade({{ $t->id }})">Show ⌖</span></span>
 </button>
 <div id="detail-{{ $t->id }}" class="hidden px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800/50 border-t dark:border-slate-800 grid sm:grid-cols-2 gap-x-6 gap-y-1">
